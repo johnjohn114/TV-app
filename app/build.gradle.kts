@@ -17,7 +17,6 @@ android {
         getByName("debug") {
             // Install the test build alongside the existing stable app.
             applicationIdSuffix = ".test"
-            versionNameSuffix = "-test"
         }
     }
     compileOptions {
