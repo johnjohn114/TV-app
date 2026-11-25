@@ -39,7 +39,10 @@ jobs:
           echo "$(dirname "${SDKMANAGER}")" >> "$GITHUB_PATH"
       - name: Accept Android SDK licenses
         shell: bash
-        run: yes | sdkmanager --licenses
+        run: |
+          # sdkmanager handles the input; ignore SIGPIPE from 'yes' after it exits.
+          set +o pipefail
+          yes | sdkmanager --licenses
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
       - name: Build debug APK
