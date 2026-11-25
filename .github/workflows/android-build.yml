@@ -24,14 +24,21 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      # GitHub-hosted Ubuntu runners already include the Android SDK.
-      # Do not use android-actions/setup-android here: it requests the
-      # deprecated "tools" package, which is no longer in the SDK repository.
-      - name: Show Android SDK environment
+      - name: Locate Android SDK tools
+        shell: bash
         run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          sdkmanager --version
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "${SDKMANAGER}" ]; then
+            echo "sdkmanager was not found under ${ANDROID_HOME}/cmdline-tools"
+            find "${ANDROID_HOME}" -maxdepth 4 -type f -name sdkmanager -print || true
+            exit 1
+          fi
+          echo "Found sdkmanager: ${SDKMANAGER}"
+          echo "$(dirname "${SDKMANAGER}")" >> "$GITHUB_PATH"
       - name: Accept Android SDK licenses
+        shell: bash
         run: yes | sdkmanager --licenses
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
