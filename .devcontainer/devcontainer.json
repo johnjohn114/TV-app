@@ -1,0 +1,20 @@
+{
+  "name": "OldTV Revival Android Dev",
+  "image": "mcr.microsoft.com/devcontainers/java:1-17-bullseye",
+  "features": {
+    "ghcr.io/devcontainers/features/android-sdk:1": {
+      "installGradle": true,
+      "installAndroidStudio": false
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "fwcd.kotlin",
+        "vscjava.vscode-java-pack",
+        "vscjava.vscode-gradle"
+      ]
+    }
+  },
+  "postCreateCommand": "java -version && gradle --version"
+}
