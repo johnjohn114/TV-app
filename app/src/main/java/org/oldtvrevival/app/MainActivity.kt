@@ -26,7 +26,7 @@ class MainActivity : Activity() {
             setTextColor(Color.WHITE)
         }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
         root.addView(TextView(this).apply {
-            text = "TV Office Suite • v0.1.0"
+            text = "TV Office Suite • v0.1.1"
             textSize = 18f
             setTextColor(Color.LTGRAY)
         })
