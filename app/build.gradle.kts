@@ -10,8 +10,15 @@ android {
         applicationId = "org.oldtvrevival.app"
         minSdk = 21
         targetSdk = 28
-        versionCode = 3
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.2.1-test"
+    }
+    buildTypes {
+        getByName("debug") {
+            // Install the test build alongside the existing stable app.
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+        }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
