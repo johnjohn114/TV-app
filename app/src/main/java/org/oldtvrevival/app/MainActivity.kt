@@ -1052,7 +1052,7 @@ class MainActivity : Activity() {
                     writerText = loadedWordRichText?.toString() ?: ""
                 } else {
                     loadedWordRichText = null
-                    contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                    writerText = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 }
                 if (fileName.endsWith(".docx")) showWord() else showWriter()
                 Toast.makeText(this, if (fileName.endsWith(".docx")) "Word 文件文字已讀取" else "TXT 文件已讀取", Toast.LENGTH_LONG).show()
