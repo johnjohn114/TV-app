@@ -321,6 +321,22 @@ class MainActivity : Activity() {
         formatButton("字體－") { applyWordSize(18) }
         formatButton("置中") { applyWordAlignment(Layout.Alignment.ALIGN_CENTER) }
         root.addView(toolbar)
+        val viewToolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val previewButton = Button(this).apply {
+            text = "頁面預覽"
+            textSize = 16f
+            isAllCaps = false
+            setOnClickListener { showWordPagePreview(false) }
+        }
+        viewToolbar.addView(previewButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val readingButton = Button(this).apply {
+            text = "閱讀模式"
+            textSize = 16f
+            isAllCaps = false
+            setOnClickListener { showWordPagePreview(true) }
+        }
+        viewToolbar.addView(readingButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(viewToolbar)
         val layoutToolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         fun layoutButton(label: String, action: (Button) -> Unit) {
             layoutToolbar.addView(Button(this).apply {
@@ -384,6 +400,120 @@ class MainActivity : Activity() {
         }
         setContentView(root)
         wordEditor?.requestFocus()
+    }
+
+    private fun showWordPagePreview(readingMode: Boolean) {
+        val source: CharSequence = wordEditor?.text
+            ?: loadedWordRichText
+            ?: writerText
+        val content = source.toString()
+        root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.rgb(226, 232, 239))
+            setPadding(18, 12, 18, 12)
+        }
+        val heading = TextView(this).apply {
+            text = if (readingMode) "Word｜閱讀模式" else "Word｜頁面預覽"
+            textSize = 25f
+            setTextColor(Color.rgb(32, 48, 64))
+            setTypeface(null, Typeface.BOLD)
+            setPadding(8, 8, 8, 12)
+        }
+        root.addView(heading)
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val back = Button(this).apply {
+            text = "返回編輯"
+            isAllCaps = false
+            textSize = 17f
+            setOnClickListener {
+                writerText = wordEditor?.text?.toString() ?: writerText
+                showWord()
+            }
+        }
+        actions.addView(back, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val home = Button(this).apply {
+            text = "返回主畫面"
+            isAllCaps = false
+            textSize = 17f
+            setOnClickListener {
+                writerText = wordEditor?.text?.toString() ?: writerText
+                showHome()
+            }
+        }
+        actions.addView(home, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(actions)
+        val scroll = ScrollView(this).apply { isFillViewport = true }
+        val pages = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(12, 14, 12, 24)
+        }
+        scroll.addView(pages)
+        root.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+
+        if (content.isEmpty()) {
+            pages.addView(TextView(this).apply {
+                text = "目前沒有文件內容"
+                textSize = 22f
+                setTextColor(Color.DKGRAY)
+                setPadding(28, 32, 28, 32)
+                setBackgroundColor(Color.WHITE)
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 220))
+        } else {
+            val pageRanges = ArrayList<Pair<Int, Int>>()
+            if (readingMode) {
+                pageRanges.add(0 to content.length)
+            } else {
+                var start = 0
+                while (start < content.length) {
+                    var end = (start + 1150).coerceAtMost(content.length)
+                    if (end < content.length) {
+                        val paragraphBreak = content.lastIndexOf('\n', end)
+                        if (paragraphBreak > start + 350) end = paragraphBreak + 1
+                    }
+                    if (end <= start) end = (start + 1150).coerceAtMost(content.length)
+                    pageRanges.add(start to end)
+                    start = end
+                }
+            }
+            pageRanges.forEachIndexed { index, range ->
+                val page = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(36, 38, 36, 38)
+                    setBackgroundColor(Color.WHITE)
+                    elevation = 3f
+                }
+                val pageText = TextView(this).apply {
+                    text = source.subSequence(range.first, range.second)
+                    textSize = if (readingMode) 24f else 18f
+                    setTextColor(Color.rgb(35, 39, 45))
+                    gravity = Gravity.TOP or Gravity.START
+                    setLineSpacing(0f, if (readingMode) 1.35f else 1.2f)
+                    setTextIsSelectable(false)
+                }
+                page.addView(pageText, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    if (readingMode) ViewGroup.LayoutParams.WRAP_CONTENT else 500
+                ))
+                if (!readingMode) {
+                    page.addView(TextView(this).apply {
+                        text = "第 ${index + 1} 頁"
+                        textSize = 13f
+                        gravity = Gravity.CENTER
+                        setTextColor(Color.GRAY)
+                        setPadding(0, 20, 0, 0)
+                    })
+                }
+                pages.addView(page, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(4, 8, 4, 18) })
+            }
+        }
+        setContentView(root)
+        back.requestFocus()
     }
 
     private fun pickWordImage() {
