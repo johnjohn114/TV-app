@@ -50,6 +50,9 @@ class MainActivity : Activity() {
     private val requestSaveExcel = 1006
     private val requestSaveDocx = 1007
     private val requestInsertWordImage = 1008
+    private val requestOpenPowerPoint = 1009
+    private var pptSlides: List<String> = emptyList()
+    private var pptCurrentSlide = 0
     private var excelEditor: EditText? = null
     private var excelText = ""
     private var excelGrid: MutableList<MutableList<String>> = mutableListOf()
@@ -191,6 +194,7 @@ class MainActivity : Activity() {
         addHomeTile(quickRow, "檔案", "檔案管理") { showFilesScreen() }
         addHomeTile(quickRow, "Word", "DOCX 文件") { showWord() }
         addHomeTile(quickRow, "Excel", "試算表") { showExcel() }
+        addHomeTile(quickRow, "PowerPoint", "簡報") { showPowerPoint() }
         addHomeTile(quickRow, "最近", "最近文件") {
             if (writerText.isBlank()) {
                 Toast.makeText(this, "目前沒有最近開啟的文件", Toast.LENGTH_SHORT).show()
@@ -271,6 +275,75 @@ class MainActivity : Activity() {
 
         setContentView(root)
         quickRow.getChildAt(0)?.requestFocus()
+    }
+
+    private fun showPowerPoint() {
+        root = newRoot()
+        addTitle(root, "PowerPoint", "PPTX 投影片閱讀 • 支援 USB 與電視內部儲存")
+        addButton(root, "開啟 PPTX 簡報") {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    "application/zip"
+                ))
+            }
+            try {
+                startActivityForResult(intent, requestOpenPowerPoint)
+            } catch (e: Exception) {
+                Toast.makeText(this, "無法開啟簡報選擇器：${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+        if (pptSlides.isNotEmpty()) {
+            addButton(root, "繼續閱讀上次簡報") { showPowerPointSlide(pptCurrentSlide) }
+        }
+        addButton(root, "返回主畫面") { showHome() }
+        setContentView(root)
+        root.getChildAt(1)?.requestFocus()
+    }
+
+    private fun showPowerPointSlide(index: Int) {
+        if (pptSlides.isEmpty()) {
+            showPowerPoint()
+            return
+        }
+        pptCurrentSlide = index.coerceIn(0, pptSlides.lastIndex)
+        root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 18, 24, 18)
+            setBackgroundColor(Color.rgb(20, 31, 48))
+        }
+        addTitle(root, "PowerPoint｜第 ${pptCurrentSlide + 1} / ${pptSlides.size} 張",
+            "PPTX 閱讀模式 • 使用遙控器切換投影片")
+        val slide = TextView(this).apply {
+            text = pptSlides[pptCurrentSlide].ifBlank { "（此投影片沒有可讀取的文字內容）" }
+            textSize = 27f
+            setTextColor(Color.rgb(35, 43, 53))
+            gravity = Gravity.CENTER
+            setPadding(36, 28, 36, 28)
+            setBackgroundColor(Color.WHITE)
+        }
+        root.addView(slide, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ).apply { setMargins(0, 8, 0, 14) })
+        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun control(label: String, enabled: Boolean, action: () -> Unit) {
+            val button = Button(this).apply {
+                text = label
+                isAllCaps = false
+                isEnabled = enabled
+                textSize = 17f
+                setOnClickListener { action() }
+            }
+            controls.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        control("上一張", pptCurrentSlide > 0) { showPowerPointSlide(pptCurrentSlide - 1) }
+        control("下一張", pptCurrentSlide < pptSlides.lastIndex) { showPowerPointSlide(pptCurrentSlide + 1) }
+        control("簡報清單", true) { showPowerPoint() }
+        root.addView(controls)
+        setContentView(root)
+        controls.getChildAt(if (pptCurrentSlide < pptSlides.lastIndex) 1 else 0)?.requestFocus()
     }
 
     private fun showSettings() {
@@ -1139,6 +1212,21 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "XLSX 已讀取第一個工作表", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "XLSX 開啟失敗：${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode == requestOpenPowerPoint && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                pptSlides = contentResolver.openInputStream(uri)?.use { PptxCodec.read(it) }
+                    ?: throw IllegalStateException("無法讀取簡報")
+                if (pptSlides.isEmpty()) throw IllegalStateException("簡報中沒有可讀取的投影片")
+                pptCurrentSlide = 0
+                showPowerPointSlide(0)
+                Toast.makeText(this, "已讀取 ${pptSlides.size} 張投影片", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "PPTX 開啟失敗：${e.message}", Toast.LENGTH_LONG).show()
+                showPowerPoint()
             }
             return
         }
