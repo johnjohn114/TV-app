@@ -55,6 +55,7 @@ class MainActivity : Activity() {
     private var excelGrid: MutableList<MutableList<String>> = mutableListOf()
     private val storageRoot: File by lazy { Environment.getExternalStorageDirectory() }
     private var writerText = ""
+    private var loadedWordRichText: SpannableStringBuilder? = null
     private var writerEditor: EditText? = null
     private var wordEditor: EditText? = null
     private var wordParagraphAfterTwips = 120
@@ -351,7 +352,7 @@ class MainActivity : Activity() {
         }
         root.addView(layoutToolbar)
         wordEditor = EditText(this).apply {
-            setText(writerText, android.widget.TextView.BufferType.SPANNABLE)
+            setText(loadedWordRichText ?: writerText, android.widget.TextView.BufferType.SPANNABLE)
             setLineSpacing(0f, wordLineSpacing)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
@@ -369,6 +370,7 @@ class MainActivity : Activity() {
         ))
         addButton(root, "儲存 DOCX") {
             writerText = wordEditor?.text?.toString() ?: writerText
+            loadedWordRichText = null
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -1045,9 +1047,11 @@ class MainActivity : Activity() {
             val uri = data?.data ?: return
             try {
                 val fileName = queryDisplayName(uri).lowercase()
-                writerText = if (fileName.endsWith(".docx")) {
-                    readDocxText(uri)
+                if (fileName.endsWith(".docx")) {
+                    loadedWordRichText = readDocxRichText(uri)
+                    writerText = loadedWordRichText?.toString() ?: ""
                 } else {
+                    loadedWordRichText = null
                     contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 }
                 if (fileName.endsWith(".docx")) showWord() else showWriter()
@@ -1150,63 +1154,99 @@ class MainActivity : Activity() {
         return name
     }
 
-    // DOCX is a ZIP package. Extract paragraph text from its main document XML.
-    private fun readDocxText(uri: Uri): String {
+    // Read document text and embedded pictures from the DOCX package.
+    private fun readDocxRichText(uri: Uri): SpannableStringBuilder {
         val input = contentResolver.openInputStream(uri)
             ?: throw IllegalStateException("無法開啟 DOCX 檔案")
-        val xmlBytes = input.use { source ->
+        val entries = HashMap<String, ByteArray>()
+        input.use { source ->
             ZipInputStream(source).use { zip ->
-                var found: ByteArray? = null
                 var entry = zip.nextEntry
                 while (entry != null) {
-                    if (entry.name == "word/document.xml") {
-                        val output = ByteArrayOutputStream()
+                    if (!entry.isDirectory) {
+                        val out = ByteArrayOutputStream()
                         val buffer = ByteArray(8192)
                         var total = 0
                         while (true) {
                             val count = zip.read(buffer)
                             if (count < 0) break
                             total += count
-                            if (total > 10 * 1024 * 1024) {
-                                throw IllegalArgumentException("DOCX 主要內容過大，暫不支援讀取")
-                            }
-                            output.write(buffer, 0, count)
+                            if (total > 16 * 1024 * 1024) throw IllegalArgumentException("DOCX 單一檔案內容過大")
+                            out.write(buffer, 0, count)
                         }
-                        found = output.toByteArray()
-                        break
+                        entries[entry.name] = out.toByteArray()
                     }
                     zip.closeEntry()
                     entry = zip.nextEntry
                 }
-                found ?: throw IllegalArgumentException("找不到 DOCX 文件本文")
             }
         }
+        val document = entries["word/document.xml"]
+            ?: throw IllegalArgumentException("找不到 DOCX 文件本文")
+        val relationships = HashMap<String, String>()
+        entries["word/_rels/document.xml.rels"]?.let { relBytes ->
+            val relParser = Xml.newPullParser()
+            relParser.setInput(ByteArrayInputStream(relBytes), "UTF-8")
+            var event = relParser.eventType
+            while (event != XmlPullParser.END_DOCUMENT) {
+                if (event == XmlPullParser.START_TAG && relParser.name.substringAfter(':') == "Relationship") {
+                    val id = relParser.getAttributeValue(null, "Id")
+                    val target = relParser.getAttributeValue(null, "Target")
+                    if (id != null && target != null && !target.startsWith("/") && !target.contains("..")) {
+                        relationships[id] = if (target.startsWith("word/")) target else "word/$target"
+                    }
+                }
+                event = relParser.next()
+            }
+        }
+        val result = SpannableStringBuilder()
+        val pendingImages = ArrayList<Pair<Int, Bitmap>>()
         val parser = Xml.newPullParser()
-        parser.setInput(ByteArrayInputStream(xmlBytes), "UTF-8")
-        val result = StringBuilder()
+        parser.setInput(ByteArrayInputStream(document), "UTF-8")
         var inText = false
-        var inTable = false
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
                 XmlPullParser.START_TAG -> when (parser.name.substringAfter(':')) {
-                    "tbl" -> inTable = true
                     "t" -> inText = true
                     "tab" -> result.append('\t')
                     "br", "cr" -> result.append('\n')
+                    "blip" -> {
+                        val relId = parser.getAttributeValue(
+                            "http://schemas.openxmlformats.org/officeDocument/2006/relationships", "embed"
+                        )
+                        val target = relId?.let { relationships[it] }
+                        val bytes = target?.let { entries[it] }
+                        val bitmap = bytes?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                        if (bitmap != null) {
+                            val scaled = if (bitmap.width > 520) Bitmap.createScaledBitmap(
+                                bitmap, 520, (bitmap.height * 520f / bitmap.width).toInt().coerceAtLeast(1), true
+                            ) else bitmap
+                            val at = result.length
+                            result.append("\uFFFC")
+                            pendingImages.add(at to scaled)
+                        }
+                    }
                 }
                 XmlPullParser.TEXT -> if (inText) result.append(parser.text)
                 XmlPullParser.END_TAG -> when (parser.name.substringAfter(':')) {
                     "t" -> inText = false
-                    "tc" -> if (inTable) result.append('\t')
-                    "tr" -> if (inTable) result.append('\n')
-                    "tbl" -> inTable = false
-                    "p" -> if (!inTable) result.append('\n')
+                    "p" -> if (result.isNotEmpty() && result.last() != '\n') result.append('\n')
                 }
             }
             event = parser.next()
         }
-        return result.toString().trimEnd()
+        while (result.isNotEmpty() && result.last() == '\n') result.delete(result.length - 1, result.length)
+        for ((at, bitmap) in pendingImages) {
+            if (at < result.length) {
+                val bytes = ByteArrayOutputStream().also {
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 86, it)
+                }.toByteArray()
+                result.setSpan(EmbeddedWordImageSpan(bitmap, bytes, "jpg"), at, at + 1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        return result
     }
 
     private fun formatSize(bytes: Long): String {
