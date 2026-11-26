@@ -10,8 +10,8 @@ android {
         applicationId = "org.oldtvrevival.app"
         minSdk = 21
         targetSdk = 28
-        versionCode = 4
-        versionName = "0.2.1-test"
+        versionCode = 5
+        versionName = "0.3.0-test"
     }
     buildTypes {
         getByName("debug") {
