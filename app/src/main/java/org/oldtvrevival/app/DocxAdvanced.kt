@@ -14,7 +14,7 @@ import java.util.zip.ZipOutputStream
 object DocxAdvanced {
     private fun esc(value: String): String = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
 
-    fun write(text: CharSequence, output: OutputStream, afterTwips: Int, pageNumbers: Boolean) {
+    fun write(text: CharSequence, output: OutputStream, afterTwips: Int, pageNumbers: Boolean, lineSpacing: Float) {
         val lines = text.toString().split('\n')
         val spans = text as? Spanned
         val body = StringBuilder()
@@ -32,7 +32,7 @@ object DocxAdvanced {
                 }
                 body.append("<w:jc w:val=\"").append(value).append("\"/>")
             }
-            body.append("<w:spacing w:after=\"").append(afterTwips).append("\" w:line=\"276\" w:lineRule=\"auto\"/></w:pPr>")
+            body.append("<w:spacing w:after=\"").append(afterTwips).append("\" w:line=\"").append((240 * lineSpacing).toInt()).append("\" w:lineRule=\"auto\"/></w:pPr>")
             if (line.isEmpty()) body.append("<w:r><w:t></w:t></w:r>")
             var pos = 0
             while (pos < line.length) {
