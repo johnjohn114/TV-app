@@ -120,44 +120,150 @@ class MainActivity : Activity() {
     private fun showHome() {
         root = newRoot().apply {
             gravity = Gravity.TOP
-            setPadding(34, 24, 34, 22)
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, 0)
+            setBackgroundColor(Color.rgb(245, 248, 251))
         }
         val version = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "未知"
-        } catch (_: Exception) {
-            "未知"
+        } catch (_: Exception) { "未知" }
+
+        val topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(28, 14, 28, 14)
+            setBackgroundColor(Color.rgb(5, 116, 207))
         }
-        addTitle(root, "OldTV Revival", "電視版文件與檔案中心  •  v$version")
-        val welcome = TextView(this).apply {
-            text = "選擇要使用的功能"
-            textSize = 18f
-            setTextColor(Color.LTGRAY)
-            setPadding(2, 2, 0, 8)
+        topBar.addView(TextView(this).apply {
+            text = "☰"
+            textSize = 28f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(54, ViewGroup.LayoutParams.WRAP_CONTENT))
+        topBar.addView(TextView(this).apply {
+            text = "OldTV Revival"
+            textSize = 25f
+            setTextColor(Color.WHITE)
+            setTypeface(null, Typeface.BOLD)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        topBar.addView(TextView(this).apply {
+            text = "⌕"
+            textSize = 30f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+        }, LinearLayout.LayoutParams(54, ViewGroup.LayoutParams.WRAP_CONTENT))
+        topBar.addView(TextView(this).apply {
+            text = "⚙"
+            textSize = 25f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            isFocusable = true
+            setOnClickListener { showSettings() }
+        }, LinearLayout.LayoutParams(54, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(topBar)
+
+        val scroll = ScrollView(this).apply { isFillViewport = true }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(28, 18, 28, 22)
         }
-        root.addView(welcome)
+        scroll.addView(content)
+        root.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
 
-        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        addHomeTile(row1, "檔案管理", "電視儲存空間 / USB") { showFilesScreen() }
-        addHomeTile(row1, "Word", "DOCX 文件") { showWord() }
-        root.addView(row1)
+        content.addView(TextView(this).apply {
+            text = "主頁"
+            textSize = 27f
+            setTextColor(Color.rgb(35, 48, 62))
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 2, 0, 12)
+        })
 
-        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        addHomeTile(row2, "Excel", "試算表") { showExcel() }
-        addHomeTile(row2, "Writer", "純文字文件") { showWriter() }
-        root.addView(row2)
-
-        val row3 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        addHomeTile(row3, "最近文件", if (writerText.isBlank()) "尚未開啟文件" else "最近讀取的文件內容已保留") {
+        val quickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addHomeTile(quickRow, "檔案", "檔案管理") { showFilesScreen() }
+        addHomeTile(quickRow, "Word", "DOCX 文件") { showWord() }
+        addHomeTile(quickRow, "Excel", "試算表") { showExcel() }
+        addHomeTile(quickRow, "最近", "最近文件") {
             if (writerText.isBlank()) {
                 Toast.makeText(this, "目前沒有最近開啟的文件", Toast.LENGTH_SHORT).show()
-            } else {
-                showWord()
-            }
+            } else showWord()
         }
-        addHomeTile(row3, "設定與裝置資訊", "版本 / 電視規格") { showSettings() }
-        root.addView(row3)
+        content.addView(quickRow)
+
+        content.addView(TextView(this).apply {
+            text = "儲存空間"
+            textSize = 21f
+            setTextColor(Color.rgb(48, 62, 76))
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 18, 0, 8)
+        })
+        val storageRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun storageTile(label: String, detail: String, action: () -> Unit) {
+            val tile = Button(this).apply {
+                text = "$label\n$detail"
+                textSize = 17f
+                isAllCaps = false
+                isFocusable = true
+                isFocusableInTouchMode = true
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(Color.rgb(38, 58, 78))
+                setPadding(18, 12, 18, 12)
+                setBackgroundColor(Color.WHITE)
+                minHeight = 76
+                setOnFocusChangeListener { view, focused ->
+                    view.setBackgroundColor(if (focused) Color.rgb(216, 237, 255) else Color.WHITE)
+                }
+                setOnClickListener { action() }
+            }
+            storageRow.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(6, 4, 6, 4)
+            })
+        }
+        storageTile("▣  電視內部儲存空間", "瀏覽內部檔案與資料夾") { openInternalStorage() }
+        storageTile("▤  USB 隨身碟", if (selectedTreeUri == null) "選擇外接儲存裝置" else "已選擇 USB • 瀏覽內容") {
+            if (selectedTreeUri == null) openFolderPicker() else showFilesScreen()
+        }
+        content.addView(storageRow)
+
+        content.addView(TextView(this).apply {
+            text = "常用工具"
+            textSize = 21f
+            setTextColor(Color.rgb(48, 62, 76))
+            setTypeface(null, Typeface.BOLD)
+            setPadding(4, 16, 0, 8)
+        })
+        val toolsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun tool(label: String, action: () -> Unit) {
+            val button = Button(this).apply {
+                text = label
+                textSize = 16f
+                isAllCaps = false
+                setTextColor(Color.rgb(40, 65, 90))
+                setBackgroundColor(Color.rgb(232, 240, 247))
+                setOnClickListener { action() }
+                setOnFocusChangeListener { view, focused ->
+                    view.setBackgroundColor(if (focused) Color.rgb(205, 229, 249) else Color.rgb(232, 240, 247))
+                }
+            }
+            toolsRow.addView(button, LinearLayout.LayoutParams(0, 64, 1f).apply {
+                setMargins(6, 4, 6, 4)
+            })
+        }
+        tool("＋ 新增 Word") { showWord() }
+        tool("▦ 開啟 Excel") { showExcel() }
+        tool("⚙ 設定") { showSettings() }
+        content.addView(toolsRow)
+
+        content.addView(TextView(this).apply {
+            text = "OldTV Revival  •  v$version  •  離線文件工具"
+            textSize = 14f
+            setTextColor(Color.rgb(115, 128, 140))
+            setPadding(6, 18, 0, 0)
+        })
+
         setContentView(root)
-        row1.getChildAt(0)?.requestFocus()
+        quickRow.getChildAt(0)?.requestFocus()
     }
 
     private fun showSettings() {
