@@ -416,7 +416,7 @@ class MainActivity : Activity() {
         val finalBytes = output.toByteArray()
         val start = editor.selectionStart.coerceIn(0, editor.text.length)
         val end = editor.selectionEnd.coerceIn(start, editor.text.length)
-        editor.text.replace(start, end, "\\uFFFC")
+        editor.text.replace(start, end, "\uFFFC")
         val displayBitmap = if (bitmap.width > 520) {
             Bitmap.createScaledBitmap(bitmap, 520, (bitmap.height * 520f / bitmap.width).toInt().coerceAtLeast(1), true)
         } else bitmap
