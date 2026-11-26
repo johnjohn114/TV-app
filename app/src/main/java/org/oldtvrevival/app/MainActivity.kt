@@ -266,8 +266,8 @@ class MainActivity : Activity() {
         val text = editor.text as? Spannable ?: return
         val start = editor.selectionStart.coerceAtLeast(0)
         val end = editor.selectionEnd.coerceAtLeast(start)
-        val paragraphStart = text.toString().lastIndexOf('\\n', (start - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-        val nextBreak = text.toString().indexOf('\\n', end.coerceAtMost(text.length))
+        val paragraphStart = text.toString().lastIndexOf('\n', (start - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val nextBreak = text.toString().indexOf('\n', end.coerceAtMost(text.length))
         val paragraphEnd = if (nextBreak < 0) text.length else nextBreak + 1
         text.setSpan(AlignmentSpan.Standard(alignment), paragraphStart, paragraphEnd.coerceAtLeast(paragraphStart + 1).coerceAtMost(text.length), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
