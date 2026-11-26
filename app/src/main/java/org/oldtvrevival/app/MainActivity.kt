@@ -37,6 +37,7 @@ class MainActivity : Activity() {
     private val requestSaveExcel = 1006
     private var excelEditor: EditText? = null
     private var excelText = ""
+    private var excelGrid: MutableList<MutableList<String>> = mutableListOf()
     private val storageRoot: File by lazy { Environment.getExternalStorageDirectory() }
     private var writerText = ""
     private var writerEditor: EditText? = null
@@ -108,12 +109,18 @@ class MainActivity : Activity() {
             }
             startActivityForResult(intent, requestOpenText)
         }
-        root.addView(TextView(this).apply {
-            text = writerText
-            textSize = 19f
+        val documentScroll = ScrollView(this)
+        documentScroll.isFillViewport = true
+        documentScroll.addView(TextView(this).apply {
+            text = if (writerText.isBlank()) "尚未開啟文件。\n\n請選擇「開啟 DOCX 文件」讀取 Word 文件。" else writerText
+            textSize = 21f
             setTextColor(Color.WHITE)
-            setPadding(12, 18, 12, 18)
-        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            setLineSpacing(5f, 1.0f)
+            gravity = Gravity.TOP or Gravity.START
+            setPadding(18, 18, 18, 24)
+            isFocusable = true
+        })
+        root.addView(documentScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         addButton(root, "另存文字為 TXT") {
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -171,40 +178,157 @@ class MainActivity : Activity() {
 
     private fun showExcel() {
         root = newRoot()
-        addTitle(root, "Excel", "XLSX 試算表 • Tab 分欄、換行分列")
-        addButton(root, "開啟 XLSX 試算表") {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            }
-            startActivityForResult(intent, requestOpenExcel)
+        addTitle(root, "Excel", "試算表 • 方向鍵選取儲存格 • OK / Enter 編輯")
+
+        val toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
         }
-        excelEditor = EditText(this).apply {
-            setText(excelText)
+        val openButton = Button(this).apply {
+            text = "開啟 XLSX"
+            textSize = 16f
+            isFocusable = true
+            setOnClickListener {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                }
+                startActivityForResult(intent, requestOpenExcel)
+            }
+        }
+        toolbar.addView(openButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val saveButton = Button(this).apply {
+            text = "儲存 XLSX"
+            textSize = 16f
+            isFocusable = true
+            setOnClickListener {
+                excelText = serializeExcelGrid()
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    putExtra(Intent.EXTRA_TITLE, "NewSpreadsheet.xlsx")
+                }
+                startActivityForResult(intent, requestSaveExcel)
+            }
+        }
+        toolbar.addView(saveButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        root.addView(toolbar)
+
+        val parsedRows = if (excelText.isBlank()) emptyList() else excelText.split('\n').map { it.split('\t') }
+        val rowCount = maxOf(20, parsedRows.size).coerceAtMost(100)
+        val colCount = maxOf(10, parsedRows.maxOfOrNull { it.size } ?: 0).coerceAtMost(16)
+        excelGrid = MutableList(rowCount) { r ->
+            MutableList(colCount) { col -> parsedRows.getOrNull(r)?.getOrNull(col) ?: "" }
+        }
+
+        val horizontal = android.widget.HorizontalScrollView(this).apply {
+            isFillViewport = false
+            isFocusable = false
+        }
+        val vertical = ScrollView(this).apply {
+            isFillViewport = false
+            isFocusable = false
+        }
+        val grid = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 4, 0, 4)
+        }
+
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setBackgroundColor(Color.rgb(34, 57, 82))
+        }
+        header.addView(TextView(this).apply {
+            text = "#"
+            gravity = Gravity.CENTER
+            textSize = 15f
             setTextColor(Color.WHITE)
-            setHintTextColor(Color.LTGRAY)
-            hint = "第一欄、第二欄；每一行代表一列"
-            textSize = 18f
-            gravity = Gravity.TOP or Gravity.START
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            setPadding(16, 16, 16, 16)
-            setBackgroundColor(Color.rgb(25, 39, 59))
+            setPadding(8, 12, 8, 12)
+        }, LinearLayout.LayoutParams(48, ViewGroup.LayoutParams.WRAP_CONTENT))
+        for (col in 0 until colCount) {
+            header.addView(TextView(this).apply {
+                text = excelColumnName(col + 1)
+                gravity = Gravity.CENTER
+                textSize = 16f
+                setTextColor(Color.WHITE)
+                setPadding(8, 12, 8, 12)
+            }, LinearLayout.LayoutParams(144, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
-        root.addView(excelEditor, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        addButton(root, "儲存為 XLSX") {
-            excelText = excelEditor?.text?.toString() ?: excelText
-            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                putExtra(Intent.EXTRA_TITLE, "NewSpreadsheet.xlsx")
+        grid.addView(header)
+
+        for (r in 0 until rowCount) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setBackgroundColor(if (r % 2 == 0) Color.rgb(19, 34, 52) else Color.rgb(23, 40, 60))
             }
-            startActivityForResult(intent, requestSaveExcel)
+            row.addView(TextView(this).apply {
+                text = (r + 1).toString()
+                gravity = Gravity.CENTER
+                textSize = 15f
+                setTextColor(Color.LTGRAY)
+                setPadding(8, 8, 8, 8)
+            }, LinearLayout.LayoutParams(48, 54))
+            for (col in 0 until colCount) {
+                val cell = EditText(this).apply {
+                    setSingleLine(true)
+                    textSize = 17f
+                    setTextColor(Color.WHITE)
+                    setHintTextColor(Color.GRAY)
+                    hint = ""
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(10, 4, 10, 4)
+                    setText(excelGrid[r][col])
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    setSelectAllOnFocus(false)
+                    setBackgroundColor(Color.rgb(31, 49, 70))
+                    setOnFocusChangeListener { view, hasFocus ->
+                        view.setBackgroundColor(if (hasFocus) Color.rgb(42, 91, 132) else Color.rgb(31, 49, 70))
+                    }
+                    addTextChangedListener(object : android.text.TextWatcher {
+                        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                            excelGrid.getOrNull(r)?.set(col, s?.toString() ?: "")
+                        }
+                        override fun afterTextChanged(s: android.text.Editable?) {}
+                    })
+                }
+                row.addView(cell, LinearLayout.LayoutParams(144, 54))
+            }
+            grid.addView(row)
         }
+
+        vertical.addView(grid)
+        horizontal.addView(vertical)
+        root.addView(horizontal, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         addButton(root, "返回首頁") {
-            excelText = excelEditor?.text?.toString() ?: excelText
+            excelText = serializeExcelGrid()
             showHome()
         }
         setContentView(root)
+        openButton.requestFocus()
+    }
+
+    private fun serializeExcelGrid(): String {
+        if (excelGrid.isEmpty()) return excelText
+        var lastRow = excelGrid.indexOfLast { row -> row.any { it.isNotEmpty() } }
+        if (lastRow < 0) lastRow = 0
+        return (0..lastRow).joinToString("\n") { r ->
+            val row = excelGrid[r]
+            var lastCol = row.indexOfLast { it.isNotEmpty() }
+            if (lastCol < 0) lastCol = 0
+            row.take(lastCol + 1).joinToString("\t")
+        }
+    }
+
+    private fun excelColumnName(value: Int): String {
+        var n = value
+        val result = StringBuilder()
+        while (n > 0) {
+            val remainder = (n - 1) % 26
+            result.append(('A'.code + remainder).toChar())
+            n = (n - 1) / 26
+        }
+        return result.reverse().toString()
     }
 
     private fun showDeviceInfo() {
