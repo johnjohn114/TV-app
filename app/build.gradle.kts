@@ -12,8 +12,8 @@ android {
         applicationId = "org.oldtvrevival.app"
         minSdk = 21
         targetSdk = 28
-        versionCode = 13
-        versionName = "26.3.8"
+        versionCode = 14
+        versionName = "26.3.9"
     }
     lint {
         // This app is distributed directly as an APK for legacy Android TV devices,
