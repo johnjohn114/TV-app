@@ -58,18 +58,24 @@ jobs:
             echo "ANDROID_KEYSTORE_PATH=${KEYSTORE_PATH}" >> "$GITHUB_ENV"
             echo "Persistent signing key is configured."
           else
-            echo "Persistent signing key is not configured; using the default debug key for this build."
+            echo "Persistent signing key is not configured; a formal release cannot be built."
           fi
-      - name: Build debug APK
+      - name: Verify formal release signing configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${ANDROID_KEYSTORE_PATH:-}" || { echo "Missing persistent signing keystore"; exit 1; }
+          test -f "${ANDROID_KEYSTORE_PATH}" || { echo "Signing keystore file not found"; exit 1; }
+      - name: Build signed release APK
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: gradle assembleDebug
+        run: gradle assembleRelease
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: oldtv-revival-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: oldtv-revival-26.3.5-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
