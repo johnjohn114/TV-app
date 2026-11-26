@@ -15,6 +15,11 @@ android {
         versionCode = 10
         versionName = "26.3.5"
     }
+    lint {
+        // This app is distributed directly as an APK for legacy Android TV devices,
+        // not through Google Play. Keep targetSdk 28 for Android 5.0 compatibility.
+        disable += "ExpiredTargetSdkVersion"
+    }
     signingConfigs {
         create("persistent") {
             if (!persistentKeystorePath.isNullOrBlank()) {
