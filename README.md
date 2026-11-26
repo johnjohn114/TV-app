@@ -16,4 +16,4 @@ gradle assembleDebug
 APK：`app/build/outputs/apk/debug/app-debug.apk`
 
 ## 狀態
-目前為 M0 起始骨架：TV 首頁、裝置資訊檢測入口及 GitHub Actions APK 建置。文件編輯引擎尚未實作。
+目前為 26.4.1 開發中：TV 首頁、裝置資訊檢測入口及 GitHub Actions APK 建置。文件編輯引擎尚未實作。
