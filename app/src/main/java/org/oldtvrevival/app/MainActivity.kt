@@ -17,6 +17,13 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.style.StyleSpan
+import android.text.style.UnderlineSpan
+import android.graphics.Typeface
 import java.io.File
 import android.view.Gravity
 import android.view.ViewGroup
@@ -35,12 +42,14 @@ class MainActivity : Activity() {
     private val requestReadStorage = 1004
     private val requestOpenExcel = 1005
     private val requestSaveExcel = 1006
+    private val requestSaveDocx = 1007
     private var excelEditor: EditText? = null
     private var excelText = ""
     private var excelGrid: MutableList<MutableList<String>> = mutableListOf()
     private val storageRoot: File by lazy { Environment.getExternalStorageDirectory() }
     private var writerText = ""
     private var writerEditor: EditText? = null
+    private var wordEditor: EditText? = null
     private var selectedTreeUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -163,36 +172,129 @@ class MainActivity : Activity() {
 
     private fun showWord() {
         root = newRoot()
-        addTitle(root, "Word", "DOCX 文件閱讀 • 初期文字擷取")
-        addButton(root, "開啟 DOCX 文件") {
-            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            }
-            startActivityForResult(intent, requestOpenText)
+        addTitle(root, "Word", "DOCX 文件編輯 • 遙控器可選取工具與文字")
+        val toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun formatButton(label: String, action: () -> Unit) {
+            toolbar.addView(Button(this).apply {
+                text = label
+                textSize = 16f
+                isAllCaps = false
+                setOnClickListener { action() }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
-        val documentScroll = ScrollView(this)
-        documentScroll.isFillViewport = true
-        documentScroll.addView(TextView(this).apply {
-            text = if (writerText.isBlank()) "尚未開啟文件。\n\n請選擇「開啟 DOCX 文件」讀取 Word 文件。" else writerText
-            textSize = 21f
+        formatButton("粗體 B") { applyWordStyle(Typeface.BOLD) }
+        formatButton("斜體 I") { applyWordStyle(Typeface.ITALIC) }
+        formatButton("底線 U") { applyWordUnderline() }
+        root.addView(toolbar)
+        wordEditor = EditText(this).apply {
+            setText(writerText, android.widget.TextView.BufferType.SPANNABLE)
             setTextColor(Color.WHITE)
-            setLineSpacing(5f, 1.0f)
+            setHintTextColor(Color.LTGRAY)
+            hint = "在這裡編輯 Word 文件…"
+            textSize = 21f
             gravity = Gravity.TOP or Gravity.START
-            setPadding(18, 18, 18, 24)
-            isFocusable = true
-        })
-        root.addView(documentScroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        addButton(root, "另存文字為 TXT") {
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.rgb(25, 39, 59))
+        }
+        root.addView(wordEditor, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        addButton(root, "儲存 DOCX") {
+            writerText = wordEditor?.text?.toString() ?: writerText
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TITLE, "WordText.txt")
+                type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                putExtra(Intent.EXTRA_TITLE, "NewDocument.docx")
             }
-            startActivityForResult(intent, requestSaveText)
+            startActivityForResult(intent, requestSaveDocx)
         }
-        addButton(root, "返回首頁") { showHome() }
+        addButton(root, "返回主畫面") {
+            writerText = wordEditor?.text?.toString() ?: writerText
+            showHome()
+        }
         setContentView(root)
+        wordEditor?.requestFocus()
+    }
+
+    private fun applyWordStyle(style: Int) {
+        val editor = wordEditor ?: return
+        val start = editor.selectionStart.coerceAtLeast(0)
+        val end = editor.selectionEnd.coerceAtLeast(0)
+        if (start == end) {
+            Toast.makeText(this, "請先選取要套用格式的文字", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val editable = editor.text as? Spannable ?: return
+        editable.setSpan(StyleSpan(style), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    private fun applyWordUnderline() {
+        val editor = wordEditor ?: return
+        val start = editor.selectionStart.coerceAtLeast(0)
+        val end = editor.selectionEnd.coerceAtLeast(0)
+        if (start == end) {
+            Toast.makeText(this, "請先選取要套用底線的文字", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val editable = editor.text as? Spannable ?: return
+        editable.setSpan(UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    private fun xmlEscape(value: String): String = value
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\"", "&quot;").replace("'", "&apos;")
+
+    private fun writeDocx(text: CharSequence, output: java.io.OutputStream) {
+        val body = StringBuilder()
+        val content = text as? Spanned
+        val paragraphs = text.toString().split("\\n")
+        var offset = 0
+        for (paragraph in paragraphs) {
+            body.append("<w:p>")
+            var i = 0
+            while (i < paragraph.length) {
+                val absolute = offset + i
+                val styles = content?.getSpans(absolute, absolute + 1, Any::class.java) ?: emptyArray()
+                val bold = styles.filterIsInstance<StyleSpan>().any { it.style == Typeface.BOLD || it.style == Typeface.BOLD_ITALIC }
+                val italic = styles.filterIsInstance<StyleSpan>().any { it.style == Typeface.ITALIC || it.style == Typeface.BOLD_ITALIC }
+                val underline = styles.any { it is UnderlineSpan }
+                var j = i + 1
+                while (j < paragraph.length) {
+                    val next = content?.getSpans(offset + j, offset + j + 1, Any::class.java) ?: emptyArray()
+                    val nb = next.filterIsInstance<StyleSpan>().any { it.style == Typeface.BOLD || it.style == Typeface.BOLD_ITALIC }
+                    val ni = next.filterIsInstance<StyleSpan>().any { it.style == Typeface.ITALIC || it.style == Typeface.BOLD_ITALIC }
+                    val nu = next.any { it is UnderlineSpan }
+                    if (nb != bold || ni != italic || nu != underline) break
+                    j++
+                }
+                body.append("<w:r><w:rPr>")
+                if (bold) body.append("<w:b/>")
+                if (italic) body.append("<w:i/>")
+                if (underline) body.append("<w:u w:val=\"single\"/>")
+                body.append("</w:rPr><w:t xml:space=\"preserve\">")
+                body.append(xmlEscape(paragraph.substring(i, j)))
+                body.append("</w:t></w:r>")
+                i = j
+            }
+            body.append("</w:p>")
+            offset += paragraph.length + 1
+        }
+        val document = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:body>$body<w:sectPr/></w:body></w:document>"
+        val types = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/></Types>"
+        val rels = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>"
+        ZipOutputStream(output).use { zip ->
+            fun add(name: String, data: String) {
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(data.toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+            }
+            add("[Content_Types].xml", types)
+            add("_rels/.rels", rels)
+            add("word/document.xml", document)
+        }
     }
 
     private fun showWriter() {
@@ -560,6 +662,18 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "XLSX 已讀取第一個工作表", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "XLSX 開啟失敗：${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode == requestSaveDocx && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.openOutputStream(uri)?.use { output ->
+                    writeDocx(wordEditor?.text ?: writerText, output)
+                } ?: throw IllegalStateException("無法建立 DOCX 文件")
+                Toast.makeText(this, "DOCX 文件已儲存", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "DOCX 儲存失敗：${e.message}", Toast.LENGTH_LONG).show()
             }
             return
         }
