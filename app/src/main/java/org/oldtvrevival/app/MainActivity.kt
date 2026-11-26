@@ -23,6 +23,9 @@ import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
+import android.text.style.AbsoluteSizeSpan
+import android.text.style.AlignmentSpan
+import android.text.Layout
 import android.graphics.Typeface
 import java.io.File
 import android.view.Gravity
@@ -185,6 +188,9 @@ class MainActivity : Activity() {
         formatButton("粗體 B") { applyWordStyle(Typeface.BOLD) }
         formatButton("斜體 I") { applyWordStyle(Typeface.ITALIC) }
         formatButton("底線 U") { applyWordUnderline() }
+        formatButton("字體＋") { applyWordSize(26) }
+        formatButton("字體－") { applyWordSize(18) }
+        formatButton("置中") { applyWordAlignment(Layout.Alignment.ALIGN_CENTER) }
         root.addView(toolbar)
         wordEditor = EditText(this).apply {
             setText(writerText, android.widget.TextView.BufferType.SPANNABLE)
@@ -243,6 +249,29 @@ class MainActivity : Activity() {
         editable.setSpan(UnderlineSpan(), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 
+    private fun applyWordSize(sizeSp: Int) {
+        val editor = wordEditor ?: return
+        val start = editor.selectionStart.coerceAtLeast(0)
+        val end = editor.selectionEnd.coerceAtLeast(0)
+        if (start == end) {
+            Toast.makeText(this, "請先選取要調整大小的文字", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val editable = editor.text as? Spannable ?: return
+        editable.setSpan(AbsoluteSizeSpan((sizeSp * resources.displayMetrics.scaledDensity).toInt()), start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    private fun applyWordAlignment(alignment: Layout.Alignment) {
+        val editor = wordEditor ?: return
+        val text = editor.text as? Spannable ?: return
+        val start = editor.selectionStart.coerceAtLeast(0)
+        val end = editor.selectionEnd.coerceAtLeast(start)
+        val paragraphStart = text.toString().lastIndexOf('\\n', (start - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val nextBreak = text.toString().indexOf('\\n', end.coerceAtMost(text.length))
+        val paragraphEnd = if (nextBreak < 0) text.length else nextBreak + 1
+        text.setSpan(AlignmentSpan.Standard(alignment), paragraphStart, paragraphEnd.coerceAtLeast(paragraphStart + 1).coerceAtMost(text.length), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
     private fun xmlEscape(value: String): String = value
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("\"", "&quot;").replace("'", "&apos;")
@@ -253,7 +282,17 @@ class MainActivity : Activity() {
         val paragraphs = text.toString().split("\\n")
         var offset = 0
         for (paragraph in paragraphs) {
+            val paragraphStyles = content?.getSpans(offset, (offset + paragraph.length).coerceAtMost(text.length), AlignmentSpan::class.java) ?: emptyArray()
+            val alignment = paragraphStyles.lastOrNull()?.alignment
             body.append("<w:p>")
+            if (alignment != null) {
+                val value = when (alignment) {
+                    Layout.Alignment.ALIGN_CENTER -> "center"
+                    Layout.Alignment.ALIGN_OPPOSITE -> "right"
+                    else -> "left"
+                }
+                body.append("<w:pPr><w:jc w:val=\"$value\"/></w:pPr>")
+            }
             var i = 0
             while (i < paragraph.length) {
                 val absolute = offset + i
@@ -261,19 +300,22 @@ class MainActivity : Activity() {
                 val bold = styles.filterIsInstance<StyleSpan>().any { it.style == Typeface.BOLD || it.style == Typeface.BOLD_ITALIC }
                 val italic = styles.filterIsInstance<StyleSpan>().any { it.style == Typeface.ITALIC || it.style == Typeface.BOLD_ITALIC }
                 val underline = styles.any { it is UnderlineSpan }
+                val fontSize = styles.filterIsInstance<AbsoluteSizeSpan>().lastOrNull()?.size
                 var j = i + 1
                 while (j < paragraph.length) {
                     val next = content?.getSpans(offset + j, offset + j + 1, Any::class.java) ?: emptyArray()
                     val nb = next.filterIsInstance<StyleSpan>().any { it.style == Typeface.BOLD || it.style == Typeface.BOLD_ITALIC }
                     val ni = next.filterIsInstance<StyleSpan>().any { it.style == Typeface.ITALIC || it.style == Typeface.BOLD_ITALIC }
                     val nu = next.any { it is UnderlineSpan }
-                    if (nb != bold || ni != italic || nu != underline) break
+                    val ns = next.filterIsInstance<AbsoluteSizeSpan>().lastOrNull()?.size
+                    if (nb != bold || ni != italic || nu != underline || ns != fontSize) break
                     j++
                 }
                 body.append("<w:r><w:rPr>")
                 if (bold) body.append("<w:b/>")
                 if (italic) body.append("<w:i/>")
                 if (underline) body.append("<w:u w:val=\"single\"/>")
+                if (fontSize != null) body.append("<w:sz w:val=\"${(fontSize * 1.5).toInt()}\"/>")
                 body.append("</w:rPr><w:t xml:space=\"preserve\">")
                 body.append(xmlEscape(paragraph.substring(i, j)))
                 body.append("</w:t></w:r>")
