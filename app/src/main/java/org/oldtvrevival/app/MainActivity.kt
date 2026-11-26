@@ -327,6 +327,10 @@ class MainActivity : Activity() {
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
         layoutButton("插入 3×3 表格") { insertWordTable() }
+        layoutButton("新增列") { modifyWordTable("add_row") }
+        layoutButton("刪除列") { modifyWordTable("delete_row") }
+        layoutButton("新增欄") { modifyWordTable("add_column") }
+        layoutButton("刪除欄") { modifyWordTable("delete_column") }
         layoutButton("段落間距") {
             wordParagraphAfterTwips = when (wordParagraphAfterTwips) { 0 -> 120; 120 -> 240; else -> 0 }
             Toast.makeText(this, "段後距：${wordParagraphAfterTwips / 20} pt", Toast.LENGTH_SHORT).show()
@@ -384,6 +388,69 @@ class MainActivity : Activity() {
         editor.text.replace(start, end, tableText)
         editor.setSelection((start + tableText.length).coerceAtMost(editor.text.length))
         Toast.makeText(this, "已插入 3×3 表格範本；可直接修改各欄文字", Toast.LENGTH_SHORT).show()
+    }
+
+    // Edit the tab-separated table block at the current caret position.
+    private fun modifyWordTable(operation: String) {
+        val editor = wordEditor ?: return
+        val editable = editor.text
+        val content = editable.toString()
+        val caret = editor.selectionStart.coerceIn(0, content.length)
+        val lines = content.split("\n").toMutableList()
+        var offset = 0
+        var current = 0
+        for (i in lines.indices) {
+            if (caret <= offset + lines[i].length || i == lines.lastIndex) {
+                current = i
+                break
+            }
+            offset += lines[i].length + 1
+        }
+        if (!lines[current].contains('\t')) {
+            Toast.makeText(this, "請先將游標放在表格的儲存格內", Toast.LENGTH_SHORT).show()
+            return
+        }
+        var first = current
+        var last = current
+        while (first > 0 && lines[first - 1].contains('\t')) first--
+        while (last < lines.lastIndex && lines[last + 1].contains('\t')) last++
+        val rows = lines.subList(first, last + 1).map { it.split('\t').toMutableList() }.toMutableList()
+        val columns = rows.maxOfOrNull { it.size } ?: 1
+        rows.forEach { while (it.size < columns) it.add("") }
+        val row = current - first
+        val lineStart = content.lastIndexOf('\n', (caret - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
+        val column = content.substring(lineStart, caret).count { it == '\t' }.coerceIn(0, columns - 1)
+        when (operation) {
+            "add_row" -> rows.add(row + 1, MutableList(columns) { "" })
+            "delete_row" -> {
+                if (rows.size <= 1) {
+                    Toast.makeText(this, "表格至少保留一列", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                rows.removeAt(row)
+            }
+            "add_column" -> rows.forEach { it.add(column + 1, "") }
+            "delete_column" -> {
+                if (columns <= 1) {
+                    Toast.makeText(this, "表格至少保留一欄", Toast.LENGTH_SHORT).show()
+                    return
+                }
+                rows.forEach { it.removeAt(column) }
+            }
+        }
+        val replacement = rows.joinToString("\n") { it.joinToString("\t") }
+        val before = lines.take(first).joinToString("\n")
+        val after = lines.drop(last + 1).joinToString("\n")
+        val rebuilt = when {
+            before.isEmpty() && after.isEmpty() -> replacement
+            before.isEmpty() -> replacement + "\n" + after
+            after.isEmpty() -> before + "\n" + replacement
+            else -> before + "\n" + replacement + "\n" + after
+        }
+        editable.replace(0, editable.length, rebuilt)
+        val caretOffset = before.length + if (before.isEmpty()) 0 else 1
+        editor.setSelection(caretOffset.coerceIn(0, rebuilt.length))
+        Toast.makeText(this, "表格已更新", Toast.LENGTH_SHORT).show()
     }
 
     private fun applyWordStyle(style: Int) {
