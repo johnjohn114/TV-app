@@ -82,20 +82,82 @@ class MainActivity : Activity() {
         }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
+    private fun addHomeTile(container: LinearLayout, label: String, subtitle: String, action: () -> Unit) {
+        val tile = Button(this).apply {
+            text = "$label\n$subtitle"
+            textSize = 19f
+            isAllCaps = false
+            isFocusable = true
+            isFocusableInTouchMode = true
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            setPadding(12, 12, 12, 12)
+            setBackgroundColor(Color.rgb(29, 52, 78))
+            minHeight = 92
+            setOnFocusChangeListener { view, focused ->
+                view.setBackgroundColor(if (focused) Color.rgb(39, 105, 151) else Color.rgb(29, 52, 78))
+            }
+            setOnClickListener { action() }
+        }
+        container.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            setMargins(6, 6, 6, 6)
+        })
+    }
+
     private fun showHome() {
-        root = newRoot()
+        root = newRoot().apply {
+            gravity = Gravity.TOP
+            setPadding(34, 24, 34, 22)
+        }
         val version = try {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "未知"
         } catch (_: Exception) {
             "未知"
         }
-        addTitle(root, "OldTV Revival", "TV Office Suite • v$version")
+        addTitle(root, "OldTV Revival", "電視版文件與檔案中心  •  v$version")
+        val welcome = TextView(this).apply {
+            text = "選擇要使用的功能"
+            textSize = 18f
+            setTextColor(Color.LTGRAY)
+            setPadding(2, 2, 0, 8)
+        }
+        root.addView(welcome)
+
+        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addHomeTile(row1, "檔案管理", "電視儲存空間 / USB") { showFilesScreen() }
+        addHomeTile(row1, "Word", "DOCX 文件") { showWord() }
+        root.addView(row1)
+
+        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addHomeTile(row2, "Excel", "試算表") { showExcel() }
+        addHomeTile(row2, "Writer", "純文字文件") { showWriter() }
+        root.addView(row2)
+
+        val row3 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addHomeTile(row3, "最近文件", if (writerText.isBlank()) "尚未開啟文件" else "最近讀取的文件內容已保留") {
+            if (writerText.isBlank()) {
+                Toast.makeText(this, "目前沒有最近開啟的文件", Toast.LENGTH_SHORT).show()
+            } else {
+                showWord()
+            }
+        }
+        addHomeTile(row3, "設定與裝置資訊", "版本 / 電視規格") { showSettings() }
+        root.addView(row3)
+        setContentView(root)
+        row1.getChildAt(0)?.requestFocus()
+    }
+
+    private fun showSettings() {
+        root = newRoot()
+        addTitle(root, "設定", "OldTV Revival")
         addButton(root, "裝置檢測 / Device Checker") { showDeviceInfo() }
-        addButton(root, "檔案管理 / Files & USB") { showFilesScreen() }
-        addButton(root, "Word  文件編輯") { showWord() }
-        addButton(root, "Writer  純文字編輯") { showWriter() }
-        addButton(root, "Excel  試算表") { showExcel() }
-        addButton(root, "Slides / PDF（開發中）") { Toast.makeText(this, "簡報與 PDF 功能將在後續階段加入", Toast.LENGTH_SHORT).show() }
+        addButton(root, "版本資訊") {
+            val version = try {
+                packageManager.getPackageInfo(packageName, 0).versionName ?: "未知"
+            } catch (_: Exception) { "未知" }
+            Toast.makeText(this, "OldTV Revival v$version • Android 5.0.1 以上", Toast.LENGTH_LONG).show()
+        }
+        addButton(root, "返回主畫面") { showHome() }
         setContentView(root)
     }
 
