@@ -12,8 +12,8 @@ android {
         applicationId = "org.oldtvrevival.app"
         minSdk = 21
         targetSdk = 28
-        versionCode = 5
-        versionName = "0.3.0-test"
+        versionCode = 6
+        versionName = "0.3.1-test"
     }
     signingConfigs {
         create("persistent") {
@@ -27,8 +27,9 @@ android {
     }
     buildTypes {
         getByName("debug") {
-            // Install the test build alongside the existing stable app.
-            applicationIdSuffix = ".test"
+            // Use a new package ID for the persistent-signature trial.
+            // This avoids conflicting with the already-installed .test package.
+            applicationIdSuffix = ".test2"
             if (!persistentKeystorePath.isNullOrBlank()) {
                 signingConfig = signingConfigs.getByName("persistent")
             }
