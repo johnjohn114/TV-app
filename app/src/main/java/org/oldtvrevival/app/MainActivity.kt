@@ -33,6 +33,10 @@ class MainActivity : Activity() {
     private val requestOpenText = 1002
     private val requestSaveText = 1003
     private val requestReadStorage = 1004
+    private val requestOpenExcel = 1005
+    private val requestSaveExcel = 1006
+    private var excelEditor: EditText? = null
+    private var excelText = ""
     private val storageRoot: File by lazy { Environment.getExternalStorageDirectory() }
     private var writerText = ""
     private var writerEditor: EditText? = null
@@ -87,24 +91,49 @@ class MainActivity : Activity() {
         addTitle(root, "OldTV Revival", "TV Office Suite • v$version")
         addButton(root, "裝置檢測 / Device Checker") { showDeviceInfo() }
         addButton(root, "檔案管理 / Files & USB") { showFilesScreen() }
-        addButton(root, "Writer（文字文件測試版）") { showWriter() }
-        addButton(root, "Sheets / Slides / PDF（開發中）") {
-            Toast.makeText(this, "其他 Office 功能將在後續階段加入", Toast.LENGTH_SHORT).show()
+        addButton(root, "Word  文件編輯") { showWord() }
+        addButton(root, "Writer  純文字編輯") { showWriter() }
+        addButton(root, "Excel  試算表") { showExcel() }
+        addButton(root, "Slides / PDF（開發中）") { Toast.makeText(this, "簡報與 PDF 功能將在後續階段加入", Toast.LENGTH_SHORT).show() }
+        setContentView(root)
+    }
+
+    private fun showWord() {
+        root = newRoot()
+        addTitle(root, "Word", "DOCX 文件閱讀 • 初期文字擷取")
+        addButton(root, "開啟 DOCX 文件") {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            }
+            startActivityForResult(intent, requestOpenText)
         }
+        root.addView(TextView(this).apply {
+            text = writerText
+            textSize = 19f
+            setTextColor(Color.WHITE)
+            setPadding(12, 18, 12, 18)
+        }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        addButton(root, "另存文字為 TXT") {
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TITLE, "WordText.txt")
+            }
+            startActivityForResult(intent, requestSaveText)
+        }
+        addButton(root, "返回首頁") { showHome() }
         setContentView(root)
     }
 
     private fun showWriter() {
         root = newRoot()
-        addTitle(root, "Writer", "文字文件閱讀與編輯 • TXT / DOCX")
-        addButton(root, "開啟文件（TXT / DOCX）") {
+        addTitle(root, "Writer", "純文字編輯 • TXT")
+        addButton(root, "開啟 TXT 文件") {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "*/*"
-                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
-                    "text/plain",
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                ))
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("text/plain"))
             }
             startActivityForResult(intent, requestOpenText)
         }
@@ -121,7 +150,7 @@ class MainActivity : Activity() {
             setText(writerText)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
-            hint = "可閱讀及編輯 TXT；DOCX 會擷取文字內容，編輯後可另存為 TXT…"
+            hint = "在這裡編輯純文字內容…"
             textSize = 20f
             gravity = Gravity.TOP or Gravity.START
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
@@ -135,6 +164,44 @@ class MainActivity : Activity() {
         ))
         addButton(root, "返回首頁") {
             writerText = writerEditor?.text?.toString() ?: writerText
+            showHome()
+        }
+        setContentView(root)
+    }
+
+    private fun showExcel() {
+        root = newRoot()
+        addTitle(root, "Excel", "XLSX 試算表 • Tab 分欄、換行分列")
+        addButton(root, "開啟 XLSX 試算表") {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
+            startActivityForResult(intent, requestOpenExcel)
+        }
+        excelEditor = EditText(this).apply {
+            setText(excelText)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.LTGRAY)
+            hint = "第一欄、第二欄；每一行代表一列"
+            textSize = 18f
+            gravity = Gravity.TOP or Gravity.START
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.rgb(25, 39, 59))
+        }
+        root.addView(excelEditor, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        addButton(root, "儲存為 XLSX") {
+            excelText = excelEditor?.text?.toString() ?: excelText
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                putExtra(Intent.EXTRA_TITLE, "NewSpreadsheet.xlsx")
+            }
+            startActivityForResult(intent, requestSaveExcel)
+        }
+        addButton(root, "返回首頁") {
+            excelText = excelEditor?.text?.toString() ?: excelText
             showHome()
         }
         setContentView(root)
@@ -287,6 +354,29 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated by Android, retained for Android 5 compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == requestSaveExcel && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.openOutputStream(uri)?.use { XlsxCodec.write(excelText, it) }
+                    ?: throw IllegalStateException("無法建立試算表")
+                Toast.makeText(this, "XLSX 試算表已儲存", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "XLSX 儲存失敗：${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode == requestOpenExcel && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.openInputStream(uri)?.use { excelText = XlsxCodec.read(it) }
+                    ?: throw IllegalStateException("無法開啟試算表")
+                showExcel()
+                Toast.makeText(this, "XLSX 已讀取第一個工作表", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "XLSX 開啟失敗：${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         if (requestCode == requestSaveText && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             try {
@@ -306,8 +396,8 @@ class MainActivity : Activity() {
                 } else {
                     contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 }
-                showWriter()
-                Toast.makeText(this, if (fileName.endsWith(".docx")) "DOCX 文字已讀取；另存功能目前輸出 TXT" else "文字文件已讀取", Toast.LENGTH_LONG).show()
+                if (fileName.endsWith(".docx")) showWord() else showWriter()
+                Toast.makeText(this, if (fileName.endsWith(".docx")) "Word 文件文字已讀取" else "TXT 文件已讀取", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "開啟失敗：${e.message}", Toast.LENGTH_LONG).show()
             }
