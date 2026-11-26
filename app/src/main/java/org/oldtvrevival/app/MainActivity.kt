@@ -21,6 +21,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.style.StyleSpan
 import android.text.style.UnderlineSpan
 import android.text.style.AbsoluteSizeSpan
