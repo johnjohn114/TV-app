@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
 import android.provider.OpenableColumns
@@ -16,6 +17,7 @@ import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
+import java.io.File
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -30,6 +32,8 @@ class MainActivity : Activity() {
     private val requestUsbFolder = 1001
     private val requestOpenText = 1002
     private val requestSaveText = 1003
+    private val requestReadStorage = 1004
+    private val storageRoot: File by lazy { Environment.getExternalStorageDirectory() }
     private var writerText = ""
     private var writerEditor: EditText? = null
     private var selectedTreeUri: Uri? = null
@@ -159,19 +163,20 @@ class MainActivity : Activity() {
 
     private fun showFilesScreen() {
         root = newRoot()
-        addTitle(root, "檔案管理 / Files & USB", "第一版：選擇 USB 或資料夾，瀏覽檔案清單")
-        addButton(root, "選擇 USB / 資料夾") { openFolderPicker() }
-        addButton(root, "重新整理") {
+        addTitle(root, "檔案管理 / Files & USB", "可瀏覽電視內部共用儲存空間及 USB")
+        addButton(root, "瀏覽電視內部儲存空間") { openInternalStorage() }
+        addButton(root, "選擇 USB / 外接儲存裝置") { openFolderPicker() }
+        addButton(root, "重新整理 USB 清單") {
             val uri = selectedTreeUri
             if (uri != null) listFolderContents(uri) else
-                Toast.makeText(this, "請先選擇 USB 或資料夾", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "尚未選擇 USB，請先選擇外接儲存裝置", Toast.LENGTH_SHORT).show()
         }
         val uri = selectedTreeUri
         if (uri != null) {
             listFolderContents(uri)
         } else {
             root.addView(TextView(this).apply {
-                text = "尚未選擇儲存位置。按「選擇 USB / 資料夾」，再選擇 USB 隨身碟的根目錄。\n\n目前先提供瀏覽清單；檔案開啟、複製、重新命名及刪除會在後續版本加入。"
+                text = "請選擇上方功能。內部儲存空間會以唯讀方式瀏覽；USB 仍使用系統資料夾選擇器授權。"
                 textSize = 18f
                 setTextColor(Color.LTGRAY)
                 setPadding(0, 20, 0, 20)
@@ -179,6 +184,91 @@ class MainActivity : Activity() {
         }
         addButton(root, "返回首頁") { showHome() }
         setContentView(root)
+    }
+
+    private fun openInternalStorage() {
+        if (Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE), requestReadStorage)
+            return
+        }
+        showInternalStorage(storageRoot)
+    }
+
+    private fun showInternalStorage(directory: File) {
+        root = newRoot()
+        addTitle(root, "電視內部儲存空間", "唯讀瀏覽 • ${directory.absolutePath}")
+        if (directory.absolutePath != storageRoot.absolutePath) {
+            addButton(root, "⬅ 上一層資料夾") {
+                val parent = directory.parentFile
+                if (parent != null && parent.absolutePath.startsWith(storageRoot.absolutePath)) {
+                    showInternalStorage(parent)
+                } else {
+                    showInternalStorage(storageRoot)
+                }
+            }
+        }
+        val scroll = ScrollView(this)
+        val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(list)
+        root.addView(scroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        try {
+            val entries = directory.listFiles()?.sortedWith(
+                compareBy<File> { if (it.isDirectory) 0 else 1 }.thenBy { it.name.lowercase() }
+            ) ?: emptyList()
+            if (entries.isEmpty()) {
+                list.addView(TextView(this).apply {
+                    text = "這個資料夾是空的，或目前沒有讀取權限。"
+                    textSize = 18f
+                    setTextColor(Color.LTGRAY)
+                    setPadding(12, 16, 12, 16)
+                })
+            } else {
+                for (entry in entries) {
+                    val label = if (entry.isDirectory) "📁  ${entry.name}/" else
+                        "📄  ${entry.name}  •  ${formatSize(entry.length())}"
+                    list.addView(TextView(this).apply {
+                        text = label
+                        textSize = 18f
+                        setTextColor(Color.WHITE)
+                        isFocusable = entry.isDirectory
+                        setPadding(14, 13, 14, 13)
+                        if (entry.isDirectory) {
+                            setOnClickListener { showInternalStorage(entry) }
+                        }
+                    })
+                }
+            }
+            list.addView(TextView(this).apply {
+                text = "共 ${entries.size} 個項目"
+                textSize = 15f
+                setTextColor(Color.LTGRAY)
+                setPadding(8, 12, 8, 12)
+            })
+        } catch (e: Exception) {
+            list.addView(TextView(this).apply {
+                text = "讀取內部儲存空間失敗：${e.message}"
+                textSize = 18f
+                setTextColor(Color.WHITE)
+                setPadding(12, 12, 12, 12)
+            })
+        }
+        addButton(root, "返回檔案管理") { showFilesScreen() }
+        setContentView(root)
+    }
+
+    @Deprecated("Deprecated by Android, retained for Android 5 compatibility")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == requestReadStorage) {
+            if (grantResults.isNotEmpty() && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                showInternalStorage(storageRoot)
+            } else {
+                Toast.makeText(this, "未取得讀取權限，無法瀏覽內部儲存空間", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun openFolderPicker() {
