@@ -54,6 +54,9 @@ class MainActivity : Activity() {
     private var writerText = ""
     private var writerEditor: EditText? = null
     private var wordEditor: EditText? = null
+    private var wordParagraphAfterTwips = 120
+    private var wordPageNumbersEnabled = false
+    private var wordLineSpacing = 1.15f
     private var selectedTreeUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -314,8 +317,34 @@ class MainActivity : Activity() {
         formatButton("字體－") { applyWordSize(18) }
         formatButton("置中") { applyWordAlignment(Layout.Alignment.ALIGN_CENTER) }
         root.addView(toolbar)
+        val layoutToolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        fun layoutButton(label: String, action: (Button) -> Unit) {
+            layoutToolbar.addView(Button(this).apply {
+                text = label
+                textSize = 15f
+                isAllCaps = false
+                setOnClickListener { action(this) }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        layoutButton("插入 3×3 表格") { insertWordTable() }
+        layoutButton("段落間距") {
+            wordParagraphAfterTwips = when (wordParagraphAfterTwips) { 0 -> 120; 120 -> 240; else -> 0 }
+            Toast.makeText(this, "段後距：${wordParagraphAfterTwips / 20} pt", Toast.LENGTH_SHORT).show()
+        }
+        layoutButton("行距") {
+            wordLineSpacing = when (wordLineSpacing) { 1.0f -> 1.15f; 1.15f -> 1.5f; else -> 1.0f }
+            wordEditor?.setLineSpacing(0f, wordLineSpacing)
+            Toast.makeText(this, "行距：${wordLineSpacing} 倍", Toast.LENGTH_SHORT).show()
+        }
+        layoutButton("頁碼：${if (wordPageNumbersEnabled) "開" else "關"}") { button ->
+            wordPageNumbersEnabled = !wordPageNumbersEnabled
+            button.text = "頁碼：${if (wordPageNumbersEnabled) "開" else "關"}"
+            Toast.makeText(this, if (wordPageNumbersEnabled) "儲存時加入頁碼" else "已關閉頁碼", Toast.LENGTH_SHORT).show()
+        }
+        root.addView(layoutToolbar)
         wordEditor = EditText(this).apply {
             setText(writerText, android.widget.TextView.BufferType.SPANNABLE)
+            setLineSpacing(0f, wordLineSpacing)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
             hint = "在這裡編輯 Word 文件…"
@@ -345,6 +374,16 @@ class MainActivity : Activity() {
         }
         setContentView(root)
         wordEditor?.requestFocus()
+    }
+
+    private fun insertWordTable() {
+        val editor = wordEditor ?: return
+        val tableText = "欄位 1\t欄位 2\t欄位 3\n內容 1\t內容 2\t內容 3\n內容 4\t內容 5\t內容 6\n"
+        val start = editor.selectionStart.coerceAtLeast(0)
+        val end = editor.selectionEnd.coerceAtLeast(start)
+        editor.text.replace(start, end, tableText)
+        editor.setSelection((start + tableText.length).coerceAtMost(editor.text.length))
+        Toast.makeText(this, "已插入 3×3 表格範本；可直接修改各欄文字", Toast.LENGTH_SHORT).show()
     }
 
     private fun applyWordStyle(style: Int) {
@@ -399,6 +438,10 @@ class MainActivity : Activity() {
         .replace("\"", "&quot;").replace("'", "&apos;")
 
     private fun writeDocx(text: CharSequence, output: java.io.OutputStream) {
+        DocxAdvanced.write(text, output, wordParagraphAfterTwips, wordPageNumbersEnabled)
+    }
+
+    private fun legacyWriteDocxUnused(text: CharSequence, output: java.io.OutputStream) {
         val body = StringBuilder()
         val content = text as? Spanned
         val paragraphs = text.toString().split("\\n")
@@ -1019,10 +1062,12 @@ class MainActivity : Activity() {
         parser.setInput(ByteArrayInputStream(xmlBytes), "UTF-8")
         val result = StringBuilder()
         var inText = false
+        var inTable = false
         var event = parser.eventType
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
                 XmlPullParser.START_TAG -> when (parser.name.substringAfter(':')) {
+                    "tbl" -> inTable = true
                     "t" -> inText = true
                     "tab" -> result.append('\t')
                     "br", "cr" -> result.append('\n')
@@ -1030,7 +1075,10 @@ class MainActivity : Activity() {
                 XmlPullParser.TEXT -> if (inText) result.append(parser.text)
                 XmlPullParser.END_TAG -> when (parser.name.substringAfter(':')) {
                     "t" -> inText = false
-                    "p" -> result.append('\n')
+                    "tc" -> if (inTable) result.append('\t')
+                    "tr" -> if (inTable) result.append('\n')
+                    "tbl" -> inTable = false
+                    "p" -> if (!inTable) result.append('\n')
                 }
             }
             event = parser.next()
