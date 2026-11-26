@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.content.Intent
 import android.database.Cursor
 import android.graphics.Color
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -47,6 +48,7 @@ class MainActivity : Activity() {
     private val requestOpenExcel = 1005
     private val requestSaveExcel = 1006
     private val requestSaveDocx = 1007
+    private val requestInsertWordImage = 1008
     private var excelEditor: EditText? = null
     private var excelText = ""
     private var excelGrid: MutableList<MutableList<String>> = mutableListOf()
@@ -326,6 +328,7 @@ class MainActivity : Activity() {
                 setOnClickListener { action(this) }
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         }
+        layoutButton("插入圖片") { pickWordImage() }
         layoutButton("插入 3×3 表格") { insertWordTable() }
         layoutButton("新增列") { modifyWordTable("add_row") }
         layoutButton("刪除列") { modifyWordTable("delete_row") }
@@ -378,6 +381,49 @@ class MainActivity : Activity() {
         }
         setContentView(root)
         wordEditor?.requestFocus()
+    }
+
+    private fun pickWordImage() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "image/*"
+        }
+        try {
+            startActivityForResult(intent, requestInsertWordImage)
+        } catch (e: Exception) {
+            Toast.makeText(this, "無法開啟圖片選擇器：${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun insertSelectedWordImage(uri: Uri) {
+        val editor = wordEditor ?: return
+        val source = contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("無法讀取圖片")
+        val bytes = source.use { it.readBytes() }
+        if (bytes.isEmpty() || bytes.size > 12 * 1024 * 1024) {
+            throw IllegalArgumentException("圖片不可為空，且檔案需小於 12 MB")
+        }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IllegalArgumentException("不支援此圖片格式")
+        var sample = 1
+        while (bounds.outWidth / sample > 1280 || bounds.outHeight / sample > 1280) sample *= 2
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size,
+            BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: throw IllegalArgumentException("圖片解碼失敗")
+        val output = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 86, output)
+        val finalBytes = output.toByteArray()
+        val start = editor.selectionStart.coerceIn(0, editor.text.length)
+        val end = editor.selectionEnd.coerceIn(start, editor.text.length)
+        editor.text.replace(start, end, "\\uFFFC")
+        val displayBitmap = if (bitmap.width > 520) {
+            Bitmap.createScaledBitmap(bitmap, 520, (bitmap.height * 520f / bitmap.width).toInt().coerceAtLeast(1), true)
+        } else bitmap
+        editor.text.setSpan(EmbeddedWordImageSpan(displayBitmap, finalBytes, "jpg"),
+            start, start + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        editor.setSelection((start + 1).coerceAtMost(editor.text.length))
+        Toast.makeText(this, "圖片已插入文件，儲存時會嵌入 DOCX", Toast.LENGTH_LONG).show()
     }
 
     private fun insertWordTable() {
@@ -960,6 +1006,15 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "XLSX 已讀取第一個工作表", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "XLSX 開啟失敗：${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode == requestInsertWordImage && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                insertSelectedWordImage(uri)
+            } catch (e: Exception) {
+                Toast.makeText(this, "插入圖片失敗：${e.message}", Toast.LENGTH_LONG).show()
             }
             return
         }
