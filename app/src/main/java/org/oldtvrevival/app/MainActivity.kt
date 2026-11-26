@@ -177,6 +177,21 @@ class MainActivity : Activity() {
     private fun showWord() {
         root = newRoot()
         addTitle(root, "Word", "DOCX 文件編輯 • 遙控器可選取工具與文字")
+        addButton(root, "開啟 DOCX 文件") {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "application/zip"
+                ))
+            }
+            try {
+                startActivityForResult(intent, requestOpenText)
+            } catch (e: Exception) {
+                Toast.makeText(this, "無法開啟文件選擇器：${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
         val toolbar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         fun formatButton(label: String, action: () -> Unit) {
             toolbar.addView(Button(this).apply {
