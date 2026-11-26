@@ -628,7 +628,7 @@ class MainActivity : Activity() {
                         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                             excelGrid.getOrNull(r)?.set(col, s?.toString() ?: "")
-                            if (hasFocus) updateExcelFormulaPreview(r, col, formulaPreview)
+                            updateExcelFormulaPreview(r, col, formulaPreview)
                         }
                         override fun afterTextChanged(s: android.text.Editable?) {}
                     })
