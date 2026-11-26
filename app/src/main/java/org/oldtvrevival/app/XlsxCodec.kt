@@ -143,7 +143,7 @@ object XlsxCodec {
         z.closeEntry()
     }
     private fun escape(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&apos;")
-    private fun colIndex(s: String): Int { var n = 0; for (c in s) n = n * 26 + c - 'A' + 1; return n }
+    private fun colIndex(s: String): Int { var n = 0; for (c in s) n = n * 26 + (c.code - 'A'.code + 1); return n }
     private fun colName(value: Int): String {
         var n = value
         val s = StringBuilder()
