@@ -18,6 +18,8 @@ object DocxAdvanced {
         val lines = text.toString().split('\n')
         val spans = text as? Spanned
         val body = StringBuilder()
+        val images = collectImages(text)
+        val imageRels = images.mapIndexed { i, _ -> "<Relationship Id=\"rIdImage${i + 1}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/image${i + 1}.jpg\"/>" }.joinToString("")
         var offset = 0
         var index = 0
 
@@ -37,6 +39,16 @@ object DocxAdvanced {
             var pos = 0
             while (pos < line.length) {
                 val absolute = start + pos
+                val imageSpan = spans?.getSpans(absolute, absolute + 1, EmbeddedWordImageSpan::class.java)?.firstOrNull()
+                if (line[pos] == '\uFFFC' && imageSpan != null) {
+                    val imageIndex = images.indexOf(imageSpan) + 1
+                    val relId = "rIdImage$imageIndex"
+                    val cx = 4200000L
+                    val cy = (cx * imageSpan.drawable.intrinsicHeight.coerceAtLeast(1) / imageSpan.drawable.intrinsicWidth.coerceAtLeast(1)).coerceAtMost(5200000L)
+                    body.append("<w:r><w:drawing><wp:inline xmlns:wp=\"http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing\"><wp:extent cx=\"").append(cx).append("\" cy=\"").append(cy).append("\"/><wp:docPr id=\"").append(imageIndex).append("\" name=\"Picture ").append(imageIndex).append("\"/><a:graphic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:pic xmlns:pic=\"http://schemas.openxmlformats.org/drawingml/2006/picture\"><pic:nvPicPr><pic:cNvPr id=\"0\" name=\"image").append(imageIndex).append(".jpg\"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed=\"").append(relId).append("\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"").append(cx).append("\" cy=\"").append(cy).append("\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>")
+                    pos++
+                    continue
+                }
                 val styles = spans?.getSpans(absolute, absolute + 1, Any::class.java) ?: emptyArray()
                 val bold = styles.filterIsInstance<StyleSpan>().any { it.style == Typeface.BOLD || it.style == Typeface.BOLD_ITALIC }
                 val italic = styles.filterIsInstance<StyleSpan>().any { it.style == Typeface.ITALIC || it.style == Typeface.BOLD_ITALIC }
@@ -98,7 +110,8 @@ object DocxAdvanced {
         val types = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/word/document.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml\"/>" +
             (if (pageNumbers) "<Override PartName=\"/word/footer1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml\"/>" else "") + "</Types>"
         val rootRels = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"word/document.xml\"/></Relationships>"
-        val docRels = if (pageNumbers) "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdFooter\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer\" Target=\"footer1.xml\"/></Relationships>" else "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"/>"
+        val footerRel = if (pageNumbers) "<Relationship Id=\"rIdFooter\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer\" Target=\"footer1.xml\"/>" else ""
+        val docRels = "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">$footerRel$imageRels</Relationships>"
         val footer = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><w:ftr xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:p><w:pPr><w:jc w:val=\"center\"/></w:pPr><w:r><w:fldChar w:fldCharType=\"begin\"/></w:r><w:r><w:instrText xml:space=\"preserve\"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p></w:ftr>"
 
         ZipOutputStream(output).use { zip ->
@@ -112,6 +125,16 @@ object DocxAdvanced {
             add("word/document.xml", document)
             add("word/_rels/document.xml.rels", docRels)
             if (pageNumbers) add("word/footer1.xml", footer)
+            images.forEachIndexed { i, span ->
+                zip.putNextEntry(ZipEntry("word/media/image${i + 1}.jpg"))
+                zip.write(span.imageBytes)
+                zip.closeEntry()
+            }
         }
+    }
+
+    private fun collectImages(text: CharSequence): List<EmbeddedWordImageSpan> {
+        val spanned = text as? Spanned ?: return emptyList()
+        return spanned.getSpans(0, text.length, EmbeddedWordImageSpan::class.java).sortedBy { spanned.getSpanStart(it) }
     }
 }
