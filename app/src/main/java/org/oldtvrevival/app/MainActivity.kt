@@ -10,6 +10,12 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
 import android.provider.DocumentsContract.Document
+import android.provider.OpenableColumns
+import android.util.Xml
+import org.xmlpull.v1.XmlPullParser
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipInputStream
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -86,15 +92,19 @@ class MainActivity : Activity() {
 
     private fun showWriter() {
         root = newRoot()
-        addTitle(root, "Writer", "純文字文件編輯器 • 第一階段")
-        addButton(root, "開啟文字文件") {
+        addTitle(root, "Writer", "文字文件閱讀與編輯 • TXT / DOCX")
+        addButton(root, "開啟文件（TXT / DOCX）") {
             val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
-                type = "text/*"
+                type = "*/*"
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                    "text/plain",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                ))
             }
             startActivityForResult(intent, requestOpenText)
         }
-        addButton(root, "另存新檔") {
+        addButton(root, "另存為 TXT 文字檔") {
             writerText = writerEditor?.text?.toString() ?: writerText
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
@@ -107,7 +117,7 @@ class MainActivity : Activity() {
             setText(writerText)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.LTGRAY)
-            hint = "在這裡輸入文件內容…"
+            hint = "可閱讀及編輯 TXT；DOCX 會擷取文字內容，編輯後可另存為 TXT…"
             textSize = 20f
             gravity = Gravity.TOP or Gravity.START
             inputType = android.text.InputType.TYPE_CLASS_TEXT or
@@ -200,8 +210,14 @@ class MainActivity : Activity() {
         if (requestCode == requestOpenText && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             try {
-                writerText = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                val fileName = queryDisplayName(uri).lowercase()
+                writerText = if (fileName.endsWith(".docx")) {
+                    readDocxText(uri)
+                } else {
+                    contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                }
                 showWriter()
+                Toast.makeText(this, if (fileName.endsWith(".docx")) "DOCX 文字已讀取；另存功能目前輸出 TXT" else "文字文件已讀取", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "開啟失敗：${e.message}", Toast.LENGTH_LONG).show()
             }
@@ -286,6 +302,72 @@ class MainActivity : Activity() {
                 setTextColor(Color.WHITE)
             })
         }
+    }
+
+
+    private fun queryDisplayName(uri: Uri): String {
+        var name = uri.lastPathSegment ?: "document"
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) name = cursor.getString(index) ?: name
+            }
+        }
+        return name
+    }
+
+    // DOCX is a ZIP package. Extract paragraph text from its main document XML.
+    private fun readDocxText(uri: Uri): String {
+        val input = contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("無法開啟 DOCX 檔案")
+        val xmlBytes = input.use { source ->
+            ZipInputStream(source).use { zip ->
+                var found: ByteArray? = null
+                var entry = zip.nextEntry
+                while (entry != null) {
+                    if (entry.name == "word/document.xml") {
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(8192)
+                        var total = 0
+                        while (true) {
+                            val count = zip.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > 10 * 1024 * 1024) {
+                                throw IllegalArgumentException("DOCX 主要內容過大，暫不支援讀取")
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        found = output.toByteArray()
+                        break
+                    }
+                    zip.closeEntry()
+                    entry = zip.nextEntry
+                }
+                found ?: throw IllegalArgumentException("找不到 DOCX 文件本文")
+            }
+        }
+        val parser = Xml.newPullParser()
+        parser.setInput(ByteArrayInputStream(xmlBytes), "UTF-8")
+        val result = StringBuilder()
+        var inText = false
+        var event = parser.eventType
+        while (event != XmlPullParser.END_DOCUMENT) {
+            when (event) {
+                XmlPullParser.START_TAG -> when (parser.name.substringAfter(':')) {
+                    "t" -> inText = true
+                    "tab" -> result.append('\t')
+                    "br", "cr" -> result.append('\n')
+                }
+                XmlPullParser.TEXT -> if (inText) result.append(parser.text)
+                XmlPullParser.END_TAG -> when (parser.name.substringAfter(':')) {
+                    "t" -> inText = false
+                    "p" -> result.append('\n')
+                }
+            }
+            event = parser.next()
+        }
+        return result.toString().trimEnd()
     }
 
     private fun formatSize(bytes: Long): String {
