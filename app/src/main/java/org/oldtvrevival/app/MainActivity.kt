@@ -318,15 +318,21 @@ class MainActivity : Activity() {
         }
         addTitle(root, "PowerPoint｜第 ${pptCurrentSlide + 1} / ${pptSlides.size} 張",
             "PPTX 閱讀模式 • 使用遙控器切換投影片")
-        val slide = TextView(this).apply {
-            text = pptSlides[pptCurrentSlide].text.ifBlank { "（此投影片沒有可讀取的文字內容）" }
-            textSize = 27f
+        val slideFrame = FrameLayout(this).apply { setBackgroundColor(Color.WHITE) }
+        pptSlides[pptCurrentSlide].image?.let { bitmap ->
+            slideFrame.addView(ImageView(this).apply {
+                setImageBitmap(bitmap)
+                scaleType = ImageView.ScaleType.FIT_CENTER
+            }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        slideFrame.addView(TextView(this).apply {
+            text = pptSlides[pptCurrentSlide].text.ifBlank { if (pptSlides[pptCurrentSlide].image == null) "（此投影片沒有可讀取的文字或圖片）" else "" }
+            textSize = 23f
             setTextColor(Color.rgb(35, 43, 53))
             gravity = Gravity.CENTER
             setPadding(36, 28, 36, 28)
-            setBackgroundColor(Color.WHITE)
-        }
-        root.addView(slide, LinearLayout.LayoutParams(
+        }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        root.addView(slideFrame, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ).apply { setMargins(0, 8, 0, 14) })
         val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
