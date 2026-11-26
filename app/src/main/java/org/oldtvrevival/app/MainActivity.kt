@@ -438,7 +438,7 @@ class MainActivity : Activity() {
         .replace("\"", "&quot;").replace("'", "&apos;")
 
     private fun writeDocx(text: CharSequence, output: java.io.OutputStream) {
-        DocxAdvanced.write(text, output, wordParagraphAfterTwips, wordPageNumbersEnabled)
+        DocxAdvanced.write(text, output, wordParagraphAfterTwips, wordPageNumbersEnabled, wordLineSpacing)
     }
 
     private fun legacyWriteDocxUnused(text: CharSequence, output: java.io.OutputStream) {
