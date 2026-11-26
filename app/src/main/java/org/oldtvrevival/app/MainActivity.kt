@@ -541,6 +541,17 @@ class MainActivity : Activity() {
         toolbar.addView(saveButton, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         root.addView(toolbar)
 
+        val formulaPreview = TextView(this).apply {
+            text = "公式結果預覽：選取含有公式的儲存格即可查看計算結果"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+            setPadding(12, 10, 12, 10)
+            setBackgroundColor(Color.rgb(34, 57, 82))
+        }
+        root.addView(formulaPreview, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+
         val parsedRows = if (excelText.isBlank()) emptyList() else excelText.split('\n').map { it.split('\t') }
         val rowCount = maxOf(20, parsedRows.size).coerceAtMost(100)
         val colCount = maxOf(10, parsedRows.maxOfOrNull { it.size } ?: 0).coerceAtMost(16)
@@ -611,11 +622,13 @@ class MainActivity : Activity() {
                     setBackgroundColor(Color.rgb(31, 49, 70))
                     setOnFocusChangeListener { view, hasFocus ->
                         view.setBackgroundColor(if (hasFocus) Color.rgb(42, 91, 132) else Color.rgb(31, 49, 70))
+                        if (hasFocus) updateExcelFormulaPreview(r, col, formulaPreview)
                     }
                     addTextChangedListener(object : android.text.TextWatcher {
                         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
                         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                             excelGrid.getOrNull(r)?.set(col, s?.toString() ?: "")
+                            if (hasFocus) updateExcelFormulaPreview(r, col, formulaPreview)
                         }
                         override fun afterTextChanged(s: android.text.Editable?) {}
                     })
@@ -634,6 +647,17 @@ class MainActivity : Activity() {
         }
         setContentView(root)
         openButton.requestFocus()
+    }
+
+    private fun updateExcelFormulaPreview(row: Int, col: Int, preview: TextView) {
+        val raw = excelGrid.getOrNull(row)?.getOrNull(col).orEmpty()
+        val address = excelColumnName(col + 1) + (row + 1)
+        if (!raw.trimStart().startsWith("=")) {
+            preview.text = "$address  •  公式結果預覽：此儲存格不是公式"
+            return
+        }
+        val result = ExcelFormulaEngine.evaluate(raw, excelGrid)
+        preview.text = "$address  •  $raw  •  計算結果：$result"
     }
 
     private fun serializeExcelGrid(): String {
