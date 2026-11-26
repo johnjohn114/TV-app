@@ -13,6 +13,7 @@ import android.provider.DocumentsContract.Document
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -21,6 +22,10 @@ import android.widget.Toast
 class MainActivity : Activity() {
     private lateinit var root: LinearLayout
     private val requestUsbFolder = 1001
+    private val requestOpenText = 1002
+    private val requestSaveText = 1003
+    private var writerText = ""
+    private var writerEditor: EditText? = null
     private var selectedTreeUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,8 +77,51 @@ class MainActivity : Activity() {
         addTitle(root, "OldTV Revival", "TV Office Suite • v$version")
         addButton(root, "裝置檢測 / Device Checker") { showDeviceInfo() }
         addButton(root, "檔案管理 / Files & USB") { showFilesScreen() }
-        addButton(root, "Writer / Sheets / Slides / PDF（開發中）") {
-            Toast.makeText(this, "Office 文件功能將在後續階段加入", Toast.LENGTH_SHORT).show()
+        addButton(root, "Writer（文字文件測試版）") { showWriter() }
+        addButton(root, "Sheets / Slides / PDF（開發中）") {
+            Toast.makeText(this, "其他 Office 功能將在後續階段加入", Toast.LENGTH_SHORT).show()
+        }
+        setContentView(root)
+    }
+
+    private fun showWriter() {
+        root = newRoot()
+        addTitle(root, "Writer", "純文字文件編輯器 • 第一階段")
+        addButton(root, "開啟文字文件") {
+            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "text/*"
+            }
+            startActivityForResult(intent, requestOpenText)
+        }
+        addButton(root, "另存新檔") {
+            writerText = writerEditor?.text?.toString() ?: writerText
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TITLE, "NewDocument.txt")
+            }
+            startActivityForResult(intent, requestSaveText)
+        }
+        writerEditor = EditText(this).apply {
+            setText(writerText)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.LTGRAY)
+            hint = "在這裡輸入文件內容…"
+            textSize = 20f
+            gravity = Gravity.TOP or Gravity.START
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or
+                android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setPadding(16, 16, 16, 16)
+            setBackgroundColor(Color.rgb(25, 39, 59))
+        }
+        root.addView(writerEditor, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+        addButton(root, "返回首頁") {
+            writerText = writerEditor?.text?.toString() ?: writerText
+            showHome()
         }
         setContentView(root)
     }
@@ -139,6 +187,26 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated by Android, retained for Android 5 compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == requestSaveText && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                contentResolver.openOutputStream(uri)?.use { it.write(writerText.toByteArray(Charsets.UTF_8)) }
+                Toast.makeText(this, "文件已儲存", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "儲存失敗：${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        if (requestCode == requestOpenText && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            try {
+                writerText = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
+                showWriter()
+            } catch (e: Exception) {
+                Toast.makeText(this, "開啟失敗：${e.message}", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
         if (requestCode == requestUsbFolder && resultCode == RESULT_OK) {
             val uri = data?.data ?: return
             try {
