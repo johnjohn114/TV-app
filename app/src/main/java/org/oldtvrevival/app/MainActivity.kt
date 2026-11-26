@@ -36,6 +36,8 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ImageView
+import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -51,7 +53,7 @@ class MainActivity : Activity() {
     private val requestSaveDocx = 1007
     private val requestInsertWordImage = 1008
     private val requestOpenPowerPoint = 1009
-    private var pptSlides: List<String> = emptyList()
+    private var pptSlides: List<PptxSlide> = emptyList()
     private var pptCurrentSlide = 0
     private var excelEditor: EditText? = null
     private var excelText = ""
@@ -317,7 +319,7 @@ class MainActivity : Activity() {
         addTitle(root, "PowerPoint｜第 ${pptCurrentSlide + 1} / ${pptSlides.size} 張",
             "PPTX 閱讀模式 • 使用遙控器切換投影片")
         val slide = TextView(this).apply {
-            text = pptSlides[pptCurrentSlide].ifBlank { "（此投影片沒有可讀取的文字內容）" }
+            text = pptSlides[pptCurrentSlide].text.ifBlank { "（此投影片沒有可讀取的文字內容）" }
             textSize = 27f
             setTextColor(Color.rgb(35, 43, 53))
             gravity = Gravity.CENTER
