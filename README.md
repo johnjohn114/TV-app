@@ -1,6 +1,6 @@
 # OldTV Revival
 
-OldTV Revival 是面向舊款智慧電視的 Android TV 辦公套件原型。第一個實機目標：HERAN HD-50UDF26（Android 5.0.1、2GB RAM；CPU ABI 以實機檢測為準）。
+OldTV Revival 是面向舊款智慧電視的 Android TV 離線辦公與檔案管理工具。第一個實機目標：HERAN HD-50UDF26（Android 5.0.1、2GB RAM）。
 
 ## 開發環境
 - JDK 17
@@ -15,5 +15,5 @@ gradle assembleDebug
 ```
 APK：`app/build/outputs/apk/debug/app-debug.apk`
 
-## 狀態
-目前為 26.4.1 開發中：TV 首頁、裝置資訊檢測入口及 GitHub Actions APK 建置。文件編輯引擎尚未實作。
+## 版本狀態
+26.4.2 開發分支以已驗收的 26.4.1 為基礎。此版本規劃整合檔案搜尋、USB 檔案管理與內部儲存瀏覽改善，並保留 Word、Excel、Writer、PowerPoint、最近文件等既有功能。正式 APK 尚未發布。
