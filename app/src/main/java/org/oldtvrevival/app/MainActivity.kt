@@ -110,24 +110,26 @@ class MainActivity : Activity() {
         }, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
-    private fun addHomeTile(container: LinearLayout, label: String, subtitle: String, action: () -> Unit) {
+    private fun addHomeTile(container: LinearLayout, label: String, subtitle: String, prominent: Boolean = false, action: () -> Unit) {
+        val normalColor = if (prominent) Color.rgb(218, 105, 35) else Color.rgb(29, 52, 78)
+        val focusedColor = if (prominent) Color.rgb(242, 132, 54) else Color.rgb(39, 105, 151)
         val tile = Button(this).apply {
-            text = "$label\n$subtitle"
-            textSize = 19f
+            text = if (prominent) "▶  $label\n$subtitle" else "$label\n$subtitle"
+            textSize = if (prominent) 23f else 19f
             isAllCaps = false
             isFocusable = true
             isFocusableInTouchMode = true
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             setPadding(12, 12, 12, 12)
-            setBackgroundColor(Color.rgb(29, 52, 78))
-            minHeight = 92
+            setBackgroundColor(normalColor)
+            minHeight = if (prominent) 116 else 92
             setOnFocusChangeListener { view, focused ->
-                view.setBackgroundColor(if (focused) Color.rgb(39, 105, 151) else Color.rgb(29, 52, 78))
+                view.setBackgroundColor(if (focused) focusedColor else normalColor)
             }
             setOnClickListener { action() }
         }
-        container.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+        container.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, if (prominent) 1.5f else 1f).apply {
             setMargins(6, 6, 6, 6)
         })
     }
@@ -204,7 +206,7 @@ class MainActivity : Activity() {
         content.addView(quickRow)
 
         val quickRow2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        addHomeTile(quickRow2, "PowerPoint", "開啟 PPTX 簡報") { showPowerPoint() }
+        addHomeTile(quickRow2, "PowerPoint", "開啟 PPTX 簡報", prominent = true) { showPowerPoint() }
         addHomeTile(quickRow2, "最近", "最近文件") { showRecentDocuments() }
         content.addView(quickRow2)
 
@@ -1252,8 +1254,7 @@ class MainActivity : Activity() {
 
     private fun showFilesScreen() {
         root = newRoot()
-        addTitle(root, "檔案管理 / Files & USB", "搜尋檔名、瀏覽資料夾及管理已授權 USB")
-        addButton(root, "搜尋檔案") { promptFileSearch() }
+        addTitle(root, "檔案管理 / Files & USB", "瀏覽內部儲存、USB 與管理資料夾")
         addButton(root, "瀏覽電視內部儲存空間") { openInternalStorage() }
         addButton(root, if (selectedTreeUri == null) "選擇 USB / 外接儲存裝置" else "更換 USB / 外接儲存裝置") { openFolderPicker() }
         addButton(root, "建立 USB 資料夾") {
@@ -1266,7 +1267,7 @@ class MainActivity : Activity() {
             listFolderContents(uri)
         } else {
             root.addView(TextView(this).apply {
-                text = "尚未選擇 USB。內部儲存空間可瀏覽及搜尋；USB 管理需先透過系統選擇器授權。"
+                text = "尚未選擇 USB。內部儲存空間可瀏覽；USB 管理需先透過系統選擇器授權。"
                 textSize = 18f
                 setTextColor(Color.LTGRAY)
                 setPadding(0, 20, 0, 20)
@@ -1578,125 +1579,6 @@ class MainActivity : Activity() {
                 textSize = 18f
                 setTextColor(Color.WHITE)
             })
-        }
-    }
-
-    private fun promptFileSearch() {
-        val input = EditText(this).apply {
-            hint = "輸入檔名或部分名稱"
-            textSize = 18f
-            setSingleLine(true)
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("搜尋檔案")
-            .setView(input)
-            .setPositiveButton("搜尋") { _, _ ->
-                val query = input.text.toString().trim()
-                if (query.isNotEmpty()) searchFiles(query)
-            }
-            .setNegativeButton("取消", null)
-            .show()
-    }
-
-    private fun searchFiles(query: String) {
-        root = newRoot()
-        addTitle(root, "搜尋結果", "關鍵字：$query")
-        val scroll = ScrollView(this)
-        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        scroll.addView(results)
-        root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        var count = 0
-        try {
-            val matches = mutableListOf<File>()
-            fun scan(dir: File, depth: Int) {
-                if (depth > 5 || matches.size >= 200) return
-                dir.listFiles()?.forEach { file ->
-                    if (matches.size >= 200) return
-                    if (file.name.contains(query, ignoreCase = true)) matches.add(file)
-                    if (file.isDirectory && !file.name.startsWith(".")) scan(file, depth + 1)
-                }
-            }
-            if (Build.VERSION.SDK_INT < 23 || checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                scan(storageRoot, 0)
-            }
-            matches.forEach { file ->
-                count++
-                val button = Button(this).apply {
-                    text = "${if (file.isDirectory) "📁" else "📄"}  ${file.name}\n${file.absolutePath}"
-                    textSize = 15f
-                    isAllCaps = false
-                    setOnClickListener { if (file.isDirectory) showInternalStorage(file) else openInternalFile(file) }
-                }
-                results.addView(button)
-            }
-        } catch (e: Exception) {
-            results.addView(TextView(this).apply { text = "內部儲存搜尋遇到問題：${e.message}"; setTextColor(Color.WHITE) })
-        }
-        val tree = selectedTreeUri
-        if (tree != null) {
-            try {
-                val rootId = DocumentsContract.getTreeDocumentId(tree)
-                val children = mutableListOf<Pair<String, String>>()
-                fun scanUsb(parentId: String, depth: Int) {
-                    if (depth > 5 || children.size >= 200) return
-                    val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
-                    contentResolver.query(uri, arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE), null, null, null)?.use { cursor ->
-                        val idCol = cursor.getColumnIndex(Document.COLUMN_DOCUMENT_ID)
-                        val nameCol = cursor.getColumnIndex(Document.COLUMN_DISPLAY_NAME)
-                        val mimeCol = cursor.getColumnIndex(Document.COLUMN_MIME_TYPE)
-                        while (cursor.moveToNext() && children.size < 200) {
-                            if (idCol < 0 || nameCol < 0) continue
-                            val id = cursor.getString(idCol) ?: continue
-                            val name = cursor.getString(nameCol) ?: ""
-                            val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
-                            if (name.contains(query, true)) children.add(id to name)
-                            if (mime == Document.MIME_TYPE_DIR) scanUsb(id, depth + 1)
-                        }
-                    }
-                }
-                scanUsb(rootId, 0)
-                children.forEach { (id, name) ->
-                    count++
-                    results.addView(Button(this).apply {
-                        text = "USB  •  $name"
-                        textSize = 16f
-                        isAllCaps = false
-                        setOnClickListener {
-                            val docUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
-                            try {
-                                val type = contentResolver.getType(docUri) ?: "*/*"
-                                startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(docUri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
-                            } catch (_: Exception) {
-                                currentUsbDocumentId = id
-                                showFilesScreen()
-                            }
-                        }
-                    })
-                }
-            } catch (_: Exception) { }
-        }
-        if (count == 0) results.addView(TextView(this).apply {
-            text = "找不到符合「$query」的檔案。"
-            textSize = 18f
-            setTextColor(Color.LTGRAY)
-            setPadding(8, 18, 8, 18)
-        })
-        results.addView(TextView(this).apply {
-            text = if (count >= 200) "顯示前 200 筆結果" else "共找到 $count 筆結果"
-            textSize = 15f
-            setTextColor(Color.LTGRAY)
-        })
-        addButton(root, "返回檔案管理") { showFilesScreen() }
-        setContentView(root)
-    }
-
-    private fun openInternalFile(file: File) {
-        try {
-            val uri = Uri.fromFile(file)
-            val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "*/*"
-            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime))
-        } catch (e: Exception) {
-            Toast.makeText(this, "無法開啟檔案：${e.message}", Toast.LENGTH_LONG).show()
         }
     }
 
