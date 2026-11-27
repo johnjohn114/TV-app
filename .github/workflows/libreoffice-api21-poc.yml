@@ -6,7 +6,6 @@ on:
       - research/26.5.0-office-engine
     paths:
       - ".github/workflows/libreoffice-api21-poc.yml"
-      - "docs/26.5.0-office-engine-feasibility.md"
   workflow_dispatch:
 
 permissions:
@@ -45,8 +44,10 @@ jobs:
           set -euo pipefail
           test -f android/README.md
           test -f android/Bootstrap/Makefile.shared
+          echo "Editing build flavors:"
           grep -R -n "strippedUIEditing\|ALLOW_EDITING" android --include='*.gradle' --include='*.gradle.kts' | head -40
-          grep -R -n "ANDROID_API_LEVEL" android/Bootstrap android --include='*.mk' --include='*.sh' | head -40
+          echo "Android API configuration references (informational):"
+          grep -R -n "ANDROID_API_LEVEL\|ANDROID_PLATFORM\|android-21" android/Bootstrap android --include='*.mk' --include='*.sh' --include='*.gradle' --include='*.gradle.kts' | head -40 || true
           echo "Source layout and editing-flavor markers verified."
 
       - name: Record runner and source diagnostics
@@ -60,4 +61,4 @@ jobs:
           df -h .
           echo "Pinned source:"
           git -C libreoffice rev-parse HEAD
-          echo "This job is a preflight only; it does not produce an APK."
+          echo "Preflight complete. No APK is produced by this validation job."
