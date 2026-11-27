@@ -75,7 +75,7 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: oldtv-revival-26.4.1-release-apk
+          name: oldtv-revival-26.4.2-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
