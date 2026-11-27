@@ -192,17 +192,22 @@ class MainActivity : Activity() {
             setPadding(4, 2, 0, 12)
         })
 
+        // Use two rows rather than squeezing five shortcuts into one row.
+        // On Android TV the five-column row made PowerPoint difficult to notice and select.
         val quickRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addHomeTile(quickRow, "檔案", "檔案管理") { showFilesScreen() }
         addHomeTile(quickRow, "Word", "DOCX 文件") { showWord() }
         addHomeTile(quickRow, "Excel", "試算表") { showExcel() }
-        addHomeTile(quickRow, "PowerPoint", "簡報") { showPowerPoint() }
-        addHomeTile(quickRow, "最近", "最近文件") {
+        content.addView(quickRow)
+
+        val quickRow2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addHomeTile(quickRow2, "PowerPoint", "開啟 PPTX 簡報") { showPowerPoint() }
+        addHomeTile(quickRow2, "最近", "最近文件") {
             if (writerText.isBlank()) {
                 Toast.makeText(this, "目前沒有最近開啟的文件", Toast.LENGTH_SHORT).show()
             } else showWord()
         }
-        content.addView(quickRow)
+        content.addView(quickRow2)
 
         content.addView(TextView(this).apply {
             text = "儲存空間"
