@@ -41,8 +41,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK and NDK
-        uses: android-actions/setup-android@v3
+      - name: Verify preinstalled Android SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -n "$ANDROID_HOME"
+          test -x "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" || find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 -name sdkmanager -type f -print
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          df -h
 
       - name: Install pinned Android platform and NDK
         shell: bash
