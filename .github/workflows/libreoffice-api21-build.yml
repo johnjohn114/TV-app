@@ -1,0 +1,141 @@
+name: LibreOffice API 21 ARM64 Editing APK PoC
+
+on:
+  push:
+    branches:
+      - research/26.5.0-office-engine
+    paths:
+      - ".github/workflows/libreoffice-api21-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-libreoffice-editing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost
+          sudo rm -rf /usr/local/lib/android/sdk/system-images
+          sudo apt-get clean
+          docker system prune -af || true
+          df -h
+
+      - name: Install LibreOffice build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            7zip ant ant-optional autoconf automake bison build-essential \
+            flex gperf junit4 nasm python3-dev libfontconfig1-dev libkrb5-dev \
+            libnss3-dev libservlet-api-java libxml2-utils libxslt1-dev \
+            meson ninja-build unzip xsltproc zip
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK and NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install pinned Android platform and NDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.14206865"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "ANDROID_API_LEVEL=21" >> "$GITHUB_ENV"
+          df -h
+
+      - name: Checkout OldTV research branch
+        uses: actions/checkout@v4
+        with:
+          path: oldtv
+
+      - name: Checkout LibreOffice source used by F-Droid build 123
+        uses: actions/checkout@v4
+        with:
+          repository: LibreOffice/core
+          ref: cd7284b4cbbfeb507e630c1aac019f4157393acb
+          path: libreoffice
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Verify pinned source and prepare F-Droid build recipe
+        working-directory: libreoffice
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test "$(git rev-parse HEAD)" = "cd7284b4cbbfeb507e630c1aac019f4157393acb"
+
+          # Apply the same source adjustments used by F-Droid's reproducible
+          # LibreOffice Viewer 26.2.5.2 ARM64 editing build (versionCode 123).
+          sed -i -e '/rm /d' -e '/gradlew/d' android/source/Makefile
+          sed -i -e '/maven {/I,+2 d' android/source/build.gradle
+          sed -i -e '/debug/d' android/CustomTarget_lo_android.mk
+          sed -i -e '/ICECREAM_RUN/i CLASSPATH=/usr/share/java/servlet-api.jar \\\\' external/hsqldb/ExternalProject_hsqldb.mk
+
+          ./autogen.sh --enable-release-build \
+            --with-vendor=F-Droid \
+            --with-android-package-name="org.documentfoundation.libreoffice" \
+            --with-android-ndk="$ANDROID_NDK_HOME" \
+            --with-android-sdk="$ANDROID_HOME" \
+            --with-distro=LibreOfficeAndroidAArch64 \
+            --enable-android-editing
+
+      - name: Fetch LibreOffice external source archives
+        working-directory: libreoffice
+        shell: bash
+        run: |
+          set -euxo pipefail
+          make fetch
+          mkdir -p external/tarballs/extracted
+          cd external/tarballs
+          shopt -s nullglob
+          for archive in *.{tar.bz2,tar.gz,tar.xz,tgz,zip}; do
+            mkdir -p "extracted/$archive"
+            7z x -o"extracted/$archive" "$archive"
+            rm "$archive"
+          done
+          cd ../..
+          mkdir -p instdir/program/classes
+          cd instdir/program/classes
+          touch java_uno.jar juh.jar jurt.jar ridl.jar unoloader.jar unoil.jar
+
+      - name: Generate Android Gradle settings
+        working-directory: libreoffice
+        run: make liboSettings.gradle versionCode=123
+
+      - name: Build native core and Android editing APK
+        working-directory: libreoffice
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cd external/tarballs/extracted
+          shopt -s nullglob
+          for archive in *.{tar.bz2,tar.gz,tar.xz,tgz,zip}; do
+            pushd "$archive"
+            7z a "../../$archive" *
+            popd
+          done
+          cd ../../
+          rm -rf workdir instdir
+          make versionCode=123
+          find android -type f -name '*.apk' -print
+          df -h
+
+      - name: Upload standalone LibreOffice editing APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC
+          path: |
+            libreoffice/android/**/*.apk
+          if-no-files-found: error
+          retention-days: 14
