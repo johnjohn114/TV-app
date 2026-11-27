@@ -16,4 +16,4 @@ gradle assembleDebug
 APK：`app/build/outputs/apk/debug/app-debug.apk`
 
 ## 版本狀態
-26.4.2 開發分支以已驗收的 26.4.1 為基礎。此版本規劃整合檔案搜尋、USB 檔案管理與內部儲存瀏覽改善，並保留 Word、Excel、Writer、PowerPoint、最近文件等既有功能。正式 APK 尚未發布。
+26.4.2 開發分支以已驗收的 26.4.1 為基礎。此版本規劃整合檔案搜尋、USB 檔案管理與內部儲存瀏覽改善，並保留 Word、Excel、Writer、PowerPoint、最近文件等既有功能。檔案搜尋與 USB 管理第一階段已提交；正式 APK 建置及實機驗收進行中。
