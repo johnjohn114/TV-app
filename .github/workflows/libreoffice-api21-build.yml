@@ -85,7 +85,7 @@ jobs:
 
           # Apply the same source adjustments used by F-Droid's reproducible
           # LibreOffice Viewer 26.2.5.2 ARM64 editing build (versionCode 123).
-          sed -i -e '/rm /d' -e '/gradlew/d' android/source/Makefile
+          sed -i -e '/rm /d' android/source/Makefile
           sed -i -e '/maven {/I,+2 d' android/source/build.gradle
           sed -i -e '/debug/d' android/CustomTarget_lo_android.mk
           sed -i -e '/JAVA_HOME=/i CLASSPATH=/usr/share/java/servlet-api.jar \\' external/hsqldb/ExternalProject_hsqldb.mk
@@ -137,7 +137,15 @@ jobs:
           cd ../../
           rm -rf workdir instdir
           make versionCode=123
-          find android -type f -name '*.apk' -print
+          cd android/source
+          ./gradlew --no-daemon -PcmdVersionCode=123 assembleStrippedUIEditingRelease
+          cd ../..
+          echo 'APK files produced:'
+          find android/source/build/outputs/apk -type f -name '*.apk' -print
+          APK_PATH=$(find android/source/build/outputs/apk -type f -name '*.apk' -print -quit)
+          test -n "$APK_PATH"
+          test -s "$APK_PATH"
+          ls -lh "$APK_PATH"
           df -h
 
       - name: Upload standalone LibreOffice editing APK
@@ -145,6 +153,6 @@ jobs:
         with:
           name: LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC
           path: |
-            libreoffice/android/**/*.apk
+            libreoffice/android/source/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 14
