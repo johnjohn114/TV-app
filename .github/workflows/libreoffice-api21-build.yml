@@ -88,7 +88,7 @@ jobs:
           sed -i -e '/rm /d' -e '/gradlew/d' android/source/Makefile
           sed -i -e '/maven {/I,+2 d' android/source/build.gradle
           sed -i -e '/debug/d' android/CustomTarget_lo_android.mk
-          sed -i -e '/ICECREAM_RUN/i CLASSPATH=/usr/share/java/servlet-api.jar \\\\' external/hsqldb/ExternalProject_hsqldb.mk
+          sed -i -e '/JAVA_HOME=/i CLASSPATH=/usr/share/java/servlet-api.jar \\' external/hsqldb/ExternalProject_hsqldb.mk
 
           ./autogen.sh --enable-release-build \
             --with-vendor=F-Droid \
