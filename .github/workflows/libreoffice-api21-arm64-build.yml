@@ -1,0 +1,116 @@
+name: LibreOffice API 21 ARM64 Editing APK PoC
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-libreoffice:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout OldTV research branch
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned LibreOffice source
+        uses: actions/checkout@v4
+        with:
+          repository: LibreOffice/core
+          ref: cd7284b4cbbfeb507e630c1aac019f4157393acb
+          path: libreoffice
+          fetch-depth: 1
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y 7zip ant ant-optional autoconf automake bison build-essential \
+            flex gperf junit4 nasm python3-dev libfontconfig1-dev libkrb5-dev libnss3-dev \
+            libservlet-api-java libxml2-utils libxslt1-dev meson ninja-build unzip xsltproc zip
+
+      - name: Install Android SDK and NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android API and pinned NDK
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;29.0.14206865"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "NDK=$ANDROID_SDK_ROOT/ndk/29.0.14206865" >> "$GITHUB_ENV"
+          echo "SDK=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Verify pinned source and runner capacity
+        working-directory: libreoffice
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "cd7284b4cbbfeb507e630c1aac019f4157393acb"
+          git rev-parse HEAD
+          free -h
+          df -h .
+
+      - name: Apply F-Droid build preparation
+        working-directory: libreoffice
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i -e '/rm /d' -e '/gradlew/d' android/source/Makefile
+          sed -i -e '/maven {/I,+2 d' android/source/build.gradle
+          sed -i -e '/debug/d' android/CustomTarget_lo_android.mk
+          sed -i -e '/ICECREAM_RUN/i CLASSPATH=/usr/share/java/servlet-api.jar \\\\' external/hsqldb/ExternalProject_hsqldb.mk
+          ./autogen.sh --enable-release-build --with-vendor=F-Droid \
+            --with-android-package-name="org.documentfoundation.libreoffice" \
+            --with-android-ndk="$NDK" --with-android-sdk="$SDK" \
+            --with-distro=LibreOfficeAndroidAarch64 --enable-android-editing
+          make fetch
+          pushd external/tarballs
+          for ARCHIVE in *.{tar.bz2,tar.gz,tar.xz,tgz,zip}; do
+            [ -f "$ARCHIVE" ] || continue
+            mkdir -p "extracted/${ARCHIVE}"
+            7z x -o"extracted/${ARCHIVE}" "$ARCHIVE"
+            rm "$ARCHIVE"
+          done
+          popd
+          mkdir -p instdir/program/classes
+          touch instdir/program/classes/{java_uno.jar,juh.jar,jurt.jar,ridl.jar,unoloader.jar,unoil.jar}
+          make liboSettings.gradle versionCode=123
+
+      - name: Build LibreOffice native core and editing APK
+        working-directory: libreoffice
+        shell: bash
+        run: |
+          set -euo pipefail
+          pushd external/tarballs/extracted
+          for ARCHIVE in *.{tar.bz2,tar.gz,tar.xz,tgz,zip}; do
+            [ -d "$ARCHIVE" ] || continue
+            pushd "$ARCHIVE"
+            7z a "../../$ARCHIVE" *
+            popd
+          done
+          popd
+          rm -rf workdir instdir
+          make versionCode=123
+
+      - name: Locate and validate APK
+        working-directory: libreoffice
+        shell: bash
+        run: |
+          set -euo pipefail
+          find android -type f -name '*.apk' -print
+          APK="$(find android -type f -path '*strippedUIEditing*release*' -name '*.apk' | head -1)"
+          if [ -z "$APK" ]; then
+            APK="$(find android -type f -name '*.apk' | head -1)"
+          fi
+          test -n "$APK"
+          mkdir -p ../poc-output
+          cp "$APK" ../poc-output/LibreOffice-API21-ARM64-Editing-PoC.apk
+          sha256sum ../poc-output/*.apk
+          ls -lh ../poc-output/*.apk
+
+      - name: Upload standalone editing APK PoC
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreoffice-api21-arm64-editing-poc
+          path: poc-output/*.apk
+          if-no-files-found: error
+          retention-days: 14
