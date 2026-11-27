@@ -69,6 +69,7 @@ class MainActivity : Activity() {
     private var wordPageNumbersEnabled = false
     private var wordLineSpacing = 1.15f
     private var selectedTreeUri: Uri? = null
+    private var currentUsbDocumentId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -1251,20 +1252,21 @@ class MainActivity : Activity() {
 
     private fun showFilesScreen() {
         root = newRoot()
-        addTitle(root, "檔案管理 / Files & USB", "可瀏覽電視內部共用儲存空間及 USB")
+        addTitle(root, "檔案管理 / Files & USB", "搜尋檔名、瀏覽資料夾及管理已授權 USB")
+        addButton(root, "搜尋檔案") { promptFileSearch() }
         addButton(root, "瀏覽電視內部儲存空間") { openInternalStorage() }
-        addButton(root, "選擇 USB / 外接儲存裝置") { openFolderPicker() }
-        addButton(root, "重新整理 USB 清單") {
+        addButton(root, if (selectedTreeUri == null) "選擇 USB / 外接儲存裝置" else "更換 USB / 外接儲存裝置") { openFolderPicker() }
+        addButton(root, "建立 USB 資料夾") {
             val uri = selectedTreeUri
-            if (uri != null) listFolderContents(uri) else
-                Toast.makeText(this, "尚未選擇 USB，請先選擇外接儲存裝置", Toast.LENGTH_SHORT).show()
+            if (uri == null) Toast.makeText(this, "請先選擇 USB 資料夾", Toast.LENGTH_SHORT).show()
+            else promptCreateUsbFolder(uri, currentUsbDocumentId ?: DocumentsContract.getTreeDocumentId(uri))
         }
         val uri = selectedTreeUri
         if (uri != null) {
             listFolderContents(uri)
         } else {
             root.addView(TextView(this).apply {
-                text = "請選擇上方功能。內部儲存空間會以唯讀方式瀏覽；USB 仍使用系統資料夾選擇器授權。"
+                text = "尚未選擇 USB。內部儲存空間可瀏覽及搜尋；USB 管理需先透過系統選擇器授權。"
                 textSize = 18f
                 setTextColor(Color.LTGRAY)
                 setPadding(0, 20, 0, 20)
@@ -1480,56 +1482,89 @@ class MainActivity : Activity() {
     }
 
     private fun listFolderContents(treeUri: Uri) {
+        val documentId = currentUsbDocumentId ?: DocumentsContract.getTreeDocumentId(treeUri)
+        currentUsbDocumentId = documentId
         val scroll = ScrollView(this)
         val list = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 12, 0, 12)
+            setPadding(0, 8, 0, 12)
         }
         scroll.addView(list)
         root.addView(scroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
-
         try {
-            val treeDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
-            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocumentId)
+            val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+            if (documentId != rootId) {
+                val parentId = documentId.substringBeforeLast('/', "")
+                val parent = if (parentId.isNotBlank()) parentId else rootId
+                addButton(root, "⬅ 上一層 USB 資料夾") {
+                    currentUsbDocumentId = parent
+                    showFilesScreen()
+                }
+            }
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
             val projection = arrayOf(
                 Document.COLUMN_DOCUMENT_ID,
                 Document.COLUMN_DISPLAY_NAME,
                 Document.COLUMN_MIME_TYPE,
                 Document.COLUMN_SIZE
             )
-            val entries = mutableListOf<Triple<String, String, String>>()
-            val cursor: Cursor? = contentResolver.query(childrenUri, projection, null, null, null)
-            cursor?.use {
-                val nameIndex = it.getColumnIndex(Document.COLUMN_DISPLAY_NAME)
-                val mimeIndex = it.getColumnIndex(Document.COLUMN_MIME_TYPE)
-                val sizeIndex = it.getColumnIndex(Document.COLUMN_SIZE)
-                while (it.moveToNext()) {
-                    val name = if (nameIndex >= 0) it.getString(nameIndex) ?: "(未命名)" else "(未命名)"
-                    val mime = if (mimeIndex >= 0) it.getString(mimeIndex) ?: "" else ""
-                    val size = if (sizeIndex >= 0 && !it.isNull(sizeIndex)) it.getLong(sizeIndex) else -1L
-                    entries.add(Triple(name, mime, if (size >= 0) formatSize(size) else ""))
+            data class UsbEntry(val id: String, val name: String, val mime: String, val size: String)
+            val entries = mutableListOf<UsbEntry>()
+            contentResolver.query(childrenUri, projection, null, null, null)?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(Document.COLUMN_DOCUMENT_ID)
+                val nameIndex = cursor.getColumnIndex(Document.COLUMN_DISPLAY_NAME)
+                val mimeIndex = cursor.getColumnIndex(Document.COLUMN_MIME_TYPE)
+                val sizeIndex = cursor.getColumnIndex(Document.COLUMN_SIZE)
+                while (cursor.moveToNext()) {
+                    if (idIndex < 0 || nameIndex < 0 || mimeIndex < 0) continue
+                    val id = cursor.getString(idIndex) ?: continue
+                    val name = cursor.getString(nameIndex) ?: "(未命名)"
+                    val mime = cursor.getString(mimeIndex) ?: ""
+                    val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) formatSize(cursor.getLong(sizeIndex)) else ""
+                    entries.add(UsbEntry(id, name, mime, size))
                 }
             }
-            entries.sortWith(compareBy<Triple<String, String, String>> { if (it.second == Document.MIME_TYPE_DIR) 0 else 1 }.thenBy { it.first.lowercase() })
+            entries.sortWith(compareBy<UsbEntry> { if (it.mime == Document.MIME_TYPE_DIR) 0 else 1 }.thenBy { it.name.lowercase() })
             if (entries.isEmpty()) {
                 list.addView(TextView(this).apply {
-                    text = "這個資料夾是空的，或電視的 USB 檔案提供者沒有回傳內容。"
+                    text = "這個資料夾是空的，或 USB 檔案提供者沒有回傳內容。"
                     textSize = 18f
                     setTextColor(Color.LTGRAY)
-                    setPadding(0, 12, 0, 12)
+                    setPadding(8, 12, 8, 12)
                 })
-            } else {
-                for (entry in entries) {
-                    list.addView(TextView(this).apply {
-                        val kind = if (entry.second == Document.MIME_TYPE_DIR) "資料夾" else "檔案"
-                        text = "${if (kind == "資料夾") "📁" else "📄"}  ${entry.first}  •  $kind  ${entry.third}"
-                        textSize = 17f
-                        setTextColor(Color.WHITE)
-                        setPadding(12, 12, 12, 12)
-                    })
+            }
+            for (entry in entries) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(6, 4, 6, 4)
                 }
+                val isDirectory = entry.mime == Document.MIME_TYPE_DIR
+                val item = Button(this).apply {
+                    text = "${if (isDirectory) "📁" else "📄"}  ${entry.name}${if (entry.size.isNotBlank()) "  •  ${entry.size}" else ""}"
+                    textSize = 16f
+                    isAllCaps = false
+                    gravity = Gravity.CENTER_VERTICAL
+                    setOnClickListener {
+                        if (isDirectory) {
+                            currentUsbDocumentId = entry.id
+                            showFilesScreen()
+                        } else {
+                            openUsbDocument(treeUri, entry.id, entry.mime)
+                        }
+                    }
+                }
+                row.addView(item, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                val more = Button(this).apply {
+                    text = "⋮"
+                    textSize = 20f
+                    isAllCaps = false
+                    setOnClickListener { showUsbItemActions(treeUri, entry.id, entry.name, isDirectory) }
+                }
+                row.addView(more, LinearLayout.LayoutParams(64, ViewGroup.LayoutParams.WRAP_CONTENT))
+                list.addView(row)
             }
             list.addView(TextView(this).apply {
                 text = "共 ${entries.size} 個項目"
@@ -1539,13 +1574,186 @@ class MainActivity : Activity() {
             })
         } catch (e: Exception) {
             list.addView(TextView(this).apply {
-                text = "讀取資料夾失敗：${e.message}\n請重新選擇 USB 根目錄。"
+                text = "讀取 USB 資料夾失敗：${e.message}\n請重新選擇 USB 根目錄。"
                 textSize = 18f
                 setTextColor(Color.WHITE)
             })
         }
     }
 
+    private fun promptFileSearch() {
+        val input = EditText(this).apply {
+            hint = "輸入檔名或部分名稱"
+            textSize = 18f
+            setSingleLine(true)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("搜尋檔案")
+            .setView(input)
+            .setPositiveButton("搜尋") { _, _ ->
+                val query = input.text.toString().trim()
+                if (query.isNotEmpty()) searchFiles(query)
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun searchFiles(query: String) {
+        root = newRoot()
+        addTitle(root, "搜尋結果", "關鍵字：$query")
+        val scroll = ScrollView(this)
+        val results = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scroll.addView(results)
+        root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        var count = 0
+        try {
+            val matches = mutableListOf<File>()
+            fun scan(dir: File, depth: Int) {
+                if (depth > 5 || matches.size >= 200) return
+                dir.listFiles()?.forEach { file ->
+                    if (matches.size >= 200) return
+                    if (file.name.contains(query, ignoreCase = true)) matches.add(file)
+                    if (file.isDirectory && !file.name.startsWith(".")) scan(file, depth + 1)
+                }
+            }
+            if (Build.VERSION.SDK_INT < 23 || checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                scan(storageRoot, 0)
+            }
+            matches.forEach { file ->
+                count++
+                val button = Button(this).apply {
+                    text = "${if (file.isDirectory) "📁" else "📄"}  ${file.name}\n${file.absolutePath}"
+                    textSize = 15f
+                    isAllCaps = false
+                    setOnClickListener { if (file.isDirectory) showInternalStorage(file) else openInternalFile(file) }
+                }
+                results.addView(button)
+            }
+        } catch (e: Exception) {
+            results.addView(TextView(this).apply { text = "內部儲存搜尋遇到問題：${e.message}"; setTextColor(Color.WHITE) })
+        }
+        val tree = selectedTreeUri
+        if (tree != null) {
+            try {
+                val rootId = DocumentsContract.getTreeDocumentId(tree)
+                val children = mutableListOf<Pair<String, String>>()
+                fun scanUsb(parentId: String, depth: Int) {
+                    if (depth > 5 || count >= 200) return
+                    val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
+                    contentResolver.query(uri, arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE), null, null, null)?.use { cursor ->
+                        val idCol = cursor.getColumnIndex(Document.COLUMN_DOCUMENT_ID)
+                        val nameCol = cursor.getColumnIndex(Document.COLUMN_DISPLAY_NAME)
+                        val mimeCol = cursor.getColumnIndex(Document.COLUMN_MIME_TYPE)
+                        while (cursor.moveToNext() && count < 200) {
+                            if (idCol < 0 || nameCol < 0) continue
+                            val id = cursor.getString(idCol) ?: continue
+                            val name = cursor.getString(nameCol) ?: ""
+                            val mime = if (mimeCol >= 0) cursor.getString(mimeCol) ?: "" else ""
+                            if (name.contains(query, true)) children.add(id to name)
+                            if (mime == Document.MIME_TYPE_DIR) scanUsb(id, depth + 1)
+                        }
+                    }
+                }
+                scanUsb(rootId, 0)
+                children.forEach { (id, name) ->
+                    count++
+                    results.addView(Button(this).apply {
+                        text = "USB  •  $name"
+                        textSize = 16f
+                        isAllCaps = false
+                        setOnClickListener {
+                            val docUri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+                            try {
+                                val type = contentResolver.getType(docUri) ?: "*/*"
+                                startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(docUri, type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                            } catch (_: Exception) {
+                                currentUsbDocumentId = id
+                                showFilesScreen()
+                            }
+                        }
+                    })
+                }
+            } catch (_: Exception) { }
+        }
+        if (count == 0) results.addView(TextView(this).apply {
+            text = "找不到符合「$query」的檔案。"
+            textSize = 18f
+            setTextColor(Color.LTGRAY)
+            setPadding(8, 18, 8, 18)
+        })
+        results.addView(TextView(this).apply {
+            text = if (count >= 200) "顯示前 200 筆結果" else "共找到 $count 筆結果"
+            textSize = 15f
+            setTextColor(Color.LTGRAY)
+        })
+        addButton(root, "返回檔案管理") { showFilesScreen() }
+        setContentView(root)
+    }
+
+    private fun openInternalFile(file: File) {
+        try {
+            val uri = Uri.fromFile(file)
+            val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "*/*"
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime))
+        } catch (e: Exception) {
+            Toast.makeText(this, "無法開啟檔案：${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openUsbDocument(treeUri: Uri, documentId: String, mime: String) {
+        try {
+            val uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, if (mime.isBlank()) "*/*" else mime)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (e: Exception) {
+            Toast.makeText(this, "目前沒有可開啟此檔案的程式：${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun promptCreateUsbFolder(treeUri: Uri, parentId: String) {
+        val input = EditText(this).apply { hint = "資料夾名稱"; setSingleLine(true) }
+        android.app.AlertDialog.Builder(this).setTitle("建立資料夾").setView(input)
+            .setPositiveButton("建立") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotBlank()) try {
+                    val parent = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentId)
+                    DocumentsContract.createDocument(contentResolver, parent, Document.MIME_TYPE_DIR, name)
+                    currentUsbDocumentId = parentId
+                    showFilesScreen()
+                    Toast.makeText(this, "資料夾已建立", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) { Toast.makeText(this, "建立失敗：${e.message}", Toast.LENGTH_LONG).show() }
+            }.setNegativeButton("取消", null).show()
+    }
+
+    private fun showUsbItemActions(treeUri: Uri, documentId: String, name: String, isDirectory: Boolean) {
+        val options = if (isDirectory) arrayOf("開啟資料夾", "重新命名", "刪除") else arrayOf("開啟檔案", "重新命名", "刪除")
+        android.app.AlertDialog.Builder(this).setTitle(name).setItems(options) { _, which ->
+            when (which) {
+                0 -> if (isDirectory) { currentUsbDocumentId = documentId; showFilesScreen() }
+                     else openUsbDocument(treeUri, documentId, contentResolver.getType(DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)) ?: "*/*")
+                1 -> {
+                    val input = EditText(this).apply { setText(name); setSingleLine(true) }
+                    android.app.AlertDialog.Builder(this).setTitle("重新命名").setView(input)
+                        .setPositiveButton("儲存") { _, _ ->
+                            try {
+                                DocumentsContract.renameDocument(contentResolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId), input.text.toString().trim())
+                                showFilesScreen()
+                                Toast.makeText(this, "已重新命名", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) { Toast.makeText(this, "重新命名失敗：${e.message}", Toast.LENGTH_LONG).show() }
+                        }.setNegativeButton("取消", null).show()
+                }
+                2 -> android.app.AlertDialog.Builder(this).setTitle("刪除項目")
+                    .setMessage("確定要刪除「$name」嗎？此操作無法復原。")
+                    .setPositiveButton("刪除") { _, _ ->
+                        try {
+                            DocumentsContract.deleteDocument(contentResolver, DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId))
+                            showFilesScreen()
+                            Toast.makeText(this, "已刪除", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) { Toast.makeText(this, "刪除失敗：${e.message}", Toast.LENGTH_LONG).show() }
+                    }.setNegativeButton("取消", null).show()
+            }
+        }.show()
+    }
 
     private fun queryDisplayName(uri: Uri): String {
         var name = uri.lastPathSegment ?: "document"
