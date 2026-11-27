@@ -95,7 +95,7 @@ jobs:
             --with-android-package-name="org.documentfoundation.libreoffice" \
             --with-android-ndk="$ANDROID_NDK_HOME" \
             --with-android-sdk="$ANDROID_HOME" \
-            --with-distro=LibreOfficeAndroidAArch64 \
+            --with-distro=LibreOfficeAndroidAarch64 \
             --enable-android-editing
 
       - name: Fetch LibreOffice external source archives
