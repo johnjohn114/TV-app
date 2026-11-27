@@ -1638,13 +1638,13 @@ class MainActivity : Activity() {
                 val rootId = DocumentsContract.getTreeDocumentId(tree)
                 val children = mutableListOf<Pair<String, String>>()
                 fun scanUsb(parentId: String, depth: Int) {
-                    if (depth > 5 || count >= 200) return
+                    if (depth > 5 || children.size >= 200) return
                     val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
                     contentResolver.query(uri, arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE), null, null, null)?.use { cursor ->
                         val idCol = cursor.getColumnIndex(Document.COLUMN_DOCUMENT_ID)
                         val nameCol = cursor.getColumnIndex(Document.COLUMN_DISPLAY_NAME)
                         val mimeCol = cursor.getColumnIndex(Document.COLUMN_MIME_TYPE)
-                        while (cursor.moveToNext() && count < 200) {
+                        while (cursor.moveToNext() && children.size < 200) {
                             if (idCol < 0 || nameCol < 0) continue
                             val id = cursor.getString(idCol) ?: continue
                             val name = cursor.getString(nameCol) ?: ""
