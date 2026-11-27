@@ -32,6 +32,7 @@ import android.text.Layout
 import android.graphics.Typeface
 import java.io.File
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
@@ -55,6 +56,7 @@ class MainActivity : Activity() {
     private val requestOpenPowerPoint = 1009
     private var pptSlides: List<PptxSlide> = emptyList()
     private var pptCurrentSlide = 0
+    private var pptFullscreen = false
     private var excelEditor: EditText? = null
     private var excelText = ""
     private var excelGrid: MutableList<MutableList<String>> = mutableListOf()
@@ -282,6 +284,7 @@ class MainActivity : Activity() {
     }
 
     private fun showPowerPoint() {
+        pptFullscreen = false
         root = newRoot()
         addTitle(root, "PowerPoint", "PPTX 投影片閱讀 • 支援 USB 與電視內部儲存")
         addButton(root, "開啟 PPTX 簡報") {
@@ -301,25 +304,68 @@ class MainActivity : Activity() {
         }
         if (pptSlides.isNotEmpty()) {
             addButton(root, "繼續閱讀上次簡報") { showPowerPointSlide(pptCurrentSlide) }
+            val heading = TextView(this).apply {
+                text = "投影片縮圖 • 共 ${pptSlides.size} 張"
+                textSize = 19f
+                setTextColor(Color.WHITE)
+                setPadding(0, 16, 0, 8)
+            }
+            root.addView(heading)
+            val scroll = ScrollView(this)
+            val thumbnails = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            scroll.addView(thumbnails)
+            pptSlides.forEachIndexed { index, slide ->
+                val item = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    setPadding(8, 8, 8, 8)
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    setBackgroundColor(if (index == pptCurrentSlide) Color.rgb(39, 75, 108) else Color.rgb(20, 38, 59))
+                    setOnClickListener { showPowerPointSlide(index) }
+                    setOnFocusChangeListener { view, focused ->
+                        view.setBackgroundColor(if (focused) Color.rgb(39, 105, 151) else if (index == pptCurrentSlide) Color.rgb(39, 75, 108) else Color.rgb(20, 38, 59))
+                    }
+                }
+                val preview = ImageView(this).apply {
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    setBackgroundColor(Color.WHITE)
+                    slide.image?.let { setImageBitmap(it) }
+                }
+                item.addView(preview, LinearLayout.LayoutParams(168, 94).apply { setMargins(4, 2, 16, 2) })
+                item.addView(TextView(this).apply {
+                    text = "第 ${index + 1} 張\n" + slide.text.lineSequence().firstOrNull().orEmpty().take(72)
+                    textSize = 17f
+                    setTextColor(Color.WHITE)
+                    maxLines = 2
+                }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+                thumbnails.addView(item, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 108).apply {
+                    setMargins(0, 3, 0, 3)
+                })
+            }
+            root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         }
         addButton(root, "返回主畫面") { showHome() }
         setContentView(root)
         root.getChildAt(1)?.requestFocus()
     }
 
-    private fun showPowerPointSlide(index: Int) {
+    private fun showPowerPointSlide(index: Int, fullscreen: Boolean = false) {
         if (pptSlides.isEmpty()) {
             showPowerPoint()
             return
         }
         pptCurrentSlide = index.coerceIn(0, pptSlides.lastIndex)
+        pptFullscreen = fullscreen
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(24, 18, 24, 18)
+            setPadding(if (fullscreen) 0 else 24, if (fullscreen) 0 else 18, if (fullscreen) 0 else 24, if (fullscreen) 0 else 18)
             setBackgroundColor(Color.rgb(20, 31, 48))
         }
-        addTitle(root, "PowerPoint｜第 ${pptCurrentSlide + 1} / ${pptSlides.size} 張",
-            "PPTX 閱讀模式 • 使用遙控器切換投影片")
+        if (!fullscreen) {
+            addTitle(root, "PowerPoint｜第 ${pptCurrentSlide + 1} / ${pptSlides.size} 張",
+                "PPTX 閱讀模式 • 使用遙控器切換投影片")
+        }
         val slideFrame = FrameLayout(this).apply { setBackgroundColor(Color.WHITE) }
         pptSlides[pptCurrentSlide].image?.let { bitmap ->
             slideFrame.addView(ImageView(this).apply {
@@ -329,31 +375,74 @@ class MainActivity : Activity() {
         }
         slideFrame.addView(TextView(this).apply {
             text = pptSlides[pptCurrentSlide].text.ifBlank { if (pptSlides[pptCurrentSlide].image == null) "（此投影片沒有可讀取的文字或圖片）" else "" }
-            textSize = 23f
+            textSize = if (fullscreen) 25f else 23f
             setTextColor(Color.rgb(35, 43, 53))
             gravity = Gravity.CENTER
             setPadding(36, 28, 36, 28)
         }, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(slideFrame, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-        ).apply { setMargins(0, 8, 0, 14) })
-        val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        fun control(label: String, enabled: Boolean, action: () -> Unit) {
-            val button = Button(this).apply {
-                text = label
-                isAllCaps = false
-                isEnabled = enabled
-                textSize = 17f
-                setOnClickListener { action() }
+        ).apply { if (!fullscreen) setMargins(0, 8, 0, 14) })
+        if (!fullscreen) {
+            val controls = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            fun control(label: String, enabled: Boolean, action: () -> Unit) {
+                val button = Button(this).apply {
+                    text = label
+                    isAllCaps = false
+                    isEnabled = enabled
+                    textSize = 17f
+                    setOnClickListener { action() }
+                }
+                controls.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             }
-            controls.addView(button, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            control("上一張", pptCurrentSlide > 0) { showPowerPointSlide(pptCurrentSlide - 1) }
+            control("下一張", pptCurrentSlide < pptSlides.lastIndex) { showPowerPointSlide(pptCurrentSlide + 1) }
+            control("全螢幕播放", true) { showPowerPointSlide(pptCurrentSlide, true) }
+            control("投影片縮圖", true) { showPowerPoint() }
+            root.addView(controls)
         }
-        control("上一張", pptCurrentSlide > 0) { showPowerPointSlide(pptCurrentSlide - 1) }
-        control("下一張", pptCurrentSlide < pptSlides.lastIndex) { showPowerPointSlide(pptCurrentSlide + 1) }
-        control("簡報清單", true) { showPowerPoint() }
-        root.addView(controls)
         setContentView(root)
-        controls.getChildAt(if (pptCurrentSlide < pptSlides.lastIndex) 1 else 0)?.requestFocus()
+        if (!fullscreen) {
+            root.getChildAt(root.childCount - 1)?.let { controls ->
+                if (controls is LinearLayout) controls.getChildAt(if (pptCurrentSlide < pptSlides.lastIndex) 1 else 0)?.requestFocus()
+            }
+        } else {
+            window.decorView.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            )
+            root.isFocusableInTouchMode = true
+            root.requestFocus()
+        }
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+        if (pptFullscreen) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                    if (pptCurrentSlide < pptSlides.lastIndex) showPowerPointSlide(pptCurrentSlide + 1, true)
+                    return true
+                }
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_PAGE_UP, KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                    if (pptCurrentSlide > 0) showPowerPointSlide(pptCurrentSlide - 1, true)
+                    return true
+                }
+                KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE -> {
+                    showPowerPointSlide(pptCurrentSlide, false)
+                    return true
+                }
+            }
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    override fun onBackPressed() {
+        if (pptFullscreen) {
+            showPowerPointSlide(pptCurrentSlide, false)
+        } else {
+            super.onBackPressed()
+        }
     }
 
     private fun rememberRecentDocument(uri: Uri, kind: String) {
