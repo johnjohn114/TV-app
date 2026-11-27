@@ -202,11 +202,7 @@ class MainActivity : Activity() {
 
         val quickRow2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addHomeTile(quickRow2, "PowerPoint", "開啟 PPTX 簡報") { showPowerPoint() }
-        addHomeTile(quickRow2, "最近", "最近文件") {
-            if (writerText.isBlank()) {
-                Toast.makeText(this, "目前沒有最近開啟的文件", Toast.LENGTH_SHORT).show()
-            } else showWord()
-        }
+        addHomeTile(quickRow2, "最近", "最近文件") { showRecentDocuments() }
         content.addView(quickRow2)
 
         content.addView(TextView(this).apply {
@@ -270,6 +266,7 @@ class MainActivity : Activity() {
         }
         tool("＋ 新增 Word") { showWord() }
         tool("▦ 開啟 Excel") { showExcel() }
+        tool("Writer 純文字") { showWriter() }
         tool("⚙ 設定") { showSettings() }
         content.addView(toolsRow)
 
@@ -357,6 +354,90 @@ class MainActivity : Activity() {
         root.addView(controls)
         setContentView(root)
         controls.getChildAt(if (pptCurrentSlide < pptSlides.lastIndex) 1 else 0)?.requestFocus()
+    }
+
+    private fun rememberRecentDocument(uri: Uri, kind: String) {
+        val prefs = getSharedPreferences("recent_documents", MODE_PRIVATE)
+        val name = queryDisplayName(uri)
+        val encodedUri = uri.toString()
+        val count = prefs.getInt("count", 0)
+        val records = (0 until count).mapNotNull { index ->
+            val oldUri = prefs.getString("uri_$index", null) ?: return@mapNotNull null
+            Triple(oldUri, prefs.getString("name_$index", "文件") ?: "文件",
+                prefs.getString("kind_$index", "文件") ?: "文件")
+        }.filterNot { it.first == encodedUri }.toMutableList()
+        records.add(0, Triple(encodedUri, name, kind))
+        val editor = prefs.edit().putInt("count", minOf(records.size, 10))
+        records.take(10).forEachIndexed { index, item ->
+            editor.putString("uri_$index", item.first)
+            editor.putString("name_$index", item.second)
+            editor.putString("kind_$index", item.third)
+        }
+        for (index in records.size until count) {
+            editor.remove("uri_$index").remove("name_$index").remove("kind_$index")
+        }
+        editor.apply()
+    }
+
+    private fun showRecentDocuments() {
+        root = newRoot()
+        addTitle(root, "最近文件", "最近開啟的文件 • 最多保留 10 筆")
+        val prefs = getSharedPreferences("recent_documents", MODE_PRIVATE)
+        val count = prefs.getInt("count", 0)
+        var shown = 0
+        for (index in 0 until count) {
+            val uri = prefs.getString("uri_$index", null) ?: continue
+            val name = prefs.getString("name_$index", "文件") ?: "文件"
+            val kind = prefs.getString("kind_$index", "文件") ?: "文件"
+            addButton(root, "$name  •  $kind") { openRecentDocument(Uri.parse(uri), name, kind) }
+            shown++
+        }
+        if (shown == 0) {
+            val empty = TextView(this).apply {
+                text = "目前還沒有最近開啟的文件"
+                textSize = 19f
+                setTextColor(Color.WHITE)
+                setPadding(0, 20, 0, 20)
+            }
+            root.addView(empty)
+        }
+        addButton(root, "返回主畫面") { showHome() }
+        setContentView(root)
+        root.getChildAt(if (shown > 0) 1 else 2)?.requestFocus()
+    }
+
+    private fun openRecentDocument(uri: Uri, name: String, kind: String) {
+        try {
+            when (kind) {
+                "PowerPoint" -> {
+                    pptSlides = contentResolver.openInputStream(uri)?.use { PptxCodec.read(it) }
+                        ?: throw IllegalStateException("無法讀取簡報")
+                    if (pptSlides.isEmpty()) throw IllegalStateException("簡報中沒有可讀取的投影片")
+                    pptCurrentSlide = 0
+                    showPowerPointSlide(0)
+                }
+                "Excel" -> {
+                    excelText = contentResolver.openInputStream(uri)?.use { XlsxCodec.read(it) }
+                        ?: throw IllegalStateException("無法讀取試算表")
+                    showExcel()
+                }
+                "Word" -> {
+                    loadedWordRichText = readDocxRichText(uri)
+                    writerText = loadedWordRichText?.toString() ?: ""
+                    showWord()
+                }
+                else -> {
+                    loadedWordRichText = null
+                    writerText = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+                        ?: throw IllegalStateException("無法讀取文字文件")
+                    showWriter()
+                }
+            }
+            Toast.makeText(this, "已開啟：$name", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "最近文件無法開啟，可能已移動或刪除：${e.message}", Toast.LENGTH_LONG).show()
+            showRecentDocuments()
+        }
     }
 
     private fun showSettings() {
@@ -1221,6 +1302,7 @@ class MainActivity : Activity() {
             try {
                 contentResolver.openInputStream(uri)?.use { excelText = XlsxCodec.read(it) }
                     ?: throw IllegalStateException("無法開啟試算表")
+                rememberRecentDocument(uri, "Excel")
                 showExcel()
                 Toast.makeText(this, "XLSX 已讀取第一個工作表", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
@@ -1235,6 +1317,7 @@ class MainActivity : Activity() {
                     ?: throw IllegalStateException("無法讀取簡報")
                 if (pptSlides.isEmpty()) throw IllegalStateException("簡報中沒有可讀取的投影片")
                 pptCurrentSlide = 0
+                rememberRecentDocument(uri, "PowerPoint")
                 showPowerPointSlide(0)
                 Toast.makeText(this, "已讀取 ${pptSlides.size} 張投影片", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
@@ -1285,6 +1368,7 @@ class MainActivity : Activity() {
                     loadedWordRichText = null
                     writerText = contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() } ?: ""
                 }
+                rememberRecentDocument(uri, if (fileName.endsWith(".docx")) "Word" else "Writer")
                 if (fileName.endsWith(".docx")) showWord() else showWriter()
                 Toast.makeText(this, if (fileName.endsWith(".docx")) "Word 文件文字已讀取" else "TXT 文件已讀取", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
