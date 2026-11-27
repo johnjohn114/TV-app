@@ -1,0 +1,63 @@
+name: LibreOffice API 21 ARM64 PoC Preflight
+
+on:
+  push:
+    branches:
+      - research/26.5.0-office-engine
+    paths:
+      - ".github/workflows/libreoffice-api21-poc.yml"
+      - "docs/26.5.0-office-engine-feasibility.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-toolchain-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout OldTV research branch
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned LibreOffice source
+        uses: actions/checkout@v4
+        with:
+          repository: LibreOffice/core
+          ref: cd7284b4cbbfeb507e630c1aac019f4157393acb
+          path: libreoffice
+          fetch-depth: 1
+
+      - name: Verify pinned source revision
+        working-directory: libreoffice
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          expected="cd7284b4cbbfeb507e630c1aac019f4157393acb"
+          test "$actual" = "$expected"
+          echo "LibreOffice source pinned at $actual"
+
+      - name: Inspect Android build inputs
+        working-directory: libreoffice
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f android/README.md
+          test -f android/Bootstrap/Makefile.shared
+          grep -R -n "strippedUIEditing\|ALLOW_EDITING" android --include='*.gradle' --include='*.gradle.kts' | head -40
+          grep -R -n "ANDROID_API_LEVEL" android/Bootstrap android --include='*.mk' --include='*.sh' | head -40
+          echo "Source layout and editing-flavor markers verified."
+
+      - name: Record runner and source diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Runner: $(uname -a)"
+          echo "Available memory:"
+          free -h
+          echo "Disk:"
+          df -h .
+          echo "Pinned source:"
+          git -C libreoffice rev-parse HEAD
+          echo "This job is a preflight only; it does not produce an APK."
