@@ -140,9 +140,9 @@ jobs:
           cd android/source
           ./gradlew --no-daemon -PcmdVersionCode=123 assembleStrippedUIEditingRelease
           cd ../..
-          echo 'APK files produced:'
-          find android/source/build/outputs/apk -type f -name '*.apk' -print
-          APK_PATH=$(find android/source/build/outputs/apk -type f -name '*.apk' -print -quit)
+          echo 'APK files produced under Android source:'
+          find android/source -type f -name '*.apk' -print
+          APK_PATH=$(find android/source -type f -name '*.apk' -print -quit)
           test -n "$APK_PATH"
           test -s "$APK_PATH"
           ls -lh "$APK_PATH"
@@ -153,6 +153,6 @@ jobs:
         with:
           name: LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC
           path: |
-            libreoffice/android/source/build/outputs/apk/**/*.apk
+            libreoffice/android/source/**/*.apk
           if-no-files-found: error
           retention-days: 14
