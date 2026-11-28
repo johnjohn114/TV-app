@@ -158,28 +158,11 @@ jobs:
           test -n "$UNSIGNED_APK"
           test -s "$UNSIGNED_APK"
           mkdir -p "$GITHUB_WORKSPACE/oldtv/build/outputs/apk"
-          keytool -genkeypair -v \\
-            -keystore "$RUNNER_TEMP/oldtv-poc.jks" \\
-            -storepass oldtv-poc-test \\
-            -keypass oldtv-poc-test \\
-            -alias oldtv-poc \\
-            -keyalg RSA -keysize 2048 -validity 10000 \\
-            -dname "CN=OldTV Revival PoC, O=Test, C=TW"
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/oldtv-poc.jks" -storepass oldtv-poc-test -keypass oldtv-poc-test -alias oldtv-poc -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=OldTV Revival PoC, O=Test, C=TW"
           "$BUILD_TOOLS/zipalign" -f -p 4 "$UNSIGNED_APK" "$RUNNER_TEMP/aligned.apk"
-          "$BUILD_TOOLS/apksigner" sign \\
-            --ks "$RUNNER_TEMP/oldtv-poc.jks" \\
-            --ks-key-alias oldtv-poc \\
-            --ks-pass pass:oldtv-poc-test \\
-            --key-pass pass:oldtv-poc-test \\
-            --min-sdk-version 21 \\
-            --v1-signing-enabled true \\
-            --v2-signing-enabled true \\
-            --out "$GITHUB_WORKSPACE/oldtv/build/outputs/apk/LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC.apk" \\
-            "$RUNNER_TEMP/aligned.apk"
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs \\
-            "$GITHUB_WORKSPACE/oldtv/build/outputs/apk/LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC.apk"
-          "$BUILD_TOOLS/aapt" dump badging \\
-            "$GITHUB_WORKSPACE/oldtv/build/outputs/apk/LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC.apk" | head -20
+          "$BUILD_TOOLS/apksigner" sign --ks "$RUNNER_TEMP/oldtv-poc.jks" --ks-key-alias oldtv-poc --ks-pass pass:oldtv-poc-test --key-pass pass:oldtv-poc-test --min-sdk-version 21 --v1-signing-enabled true --v2-signing-enabled true --out "$GITHUB_WORKSPACE/oldtv/build/outputs/apk/LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC.apk" "$RUNNER_TEMP/aligned.apk"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$GITHUB_WORKSPACE/oldtv/build/outputs/apk/LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC.apk"
+          "$BUILD_TOOLS/aapt" dump badging "$GITHUB_WORKSPACE/oldtv/build/outputs/apk/LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC.apk" | head -20
           ls -lh "$GITHUB_WORKSPACE/oldtv/build/outputs/apk/LibreOffice-26.2.5.2-API21-ARM64-Editing-PoC.apk"
 
       - name: Upload standalone LibreOffice editing APK
